@@ -1,0 +1,1 @@
+{"ts": "2026-09-21T09:01:00Z", "actor": "Admin", "actorRole": "Admin", "action": "delegation_granted", "targetUserId": "11", "targetUserName": "Aya Elnggar", "field": "department_delegation", "oldValue": null, "newValue": "Education", "note": "Granted hierarchy management over the Education department."}

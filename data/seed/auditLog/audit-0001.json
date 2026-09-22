@@ -1,0 +1,1 @@
+{"ts": "2026-09-21T09:00:00Z", "actor": "System Import", "actorRole": "System", "action": "data_imported", "targetUserId": null, "targetUserName": null, "field": null, "oldValue": null, "newValue": null, "note": "Initial import from B2G role & permission audit (2026-09-21): 444 users, 31 roles loaded."}

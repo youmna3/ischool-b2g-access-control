@@ -1,0 +1,14 @@
+{
+  "name": "ischool-b2g-access-control",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx vercel@latest dev",
+    "seed": "node scripts/seed-supabase.mjs",
+    "create-admin": "node scripts/create-admin.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.116.0"
+  }
+}

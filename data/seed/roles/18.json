@@ -1,0 +1,1 @@
+{"name": "DEMI update Study", "scope": "Org-type: i2s", "boundOrg": null, "orgsAssigned": ["DEMI"], "adminsInB2G": 1, "activeAdminsInB2G": 0, "adminsTotal": 1, "createdAt": "2023-11-28 15:22:45 +0200", "updatedAt": "2026-02-04 06:54:15 +0200", "permissions": {"Teachers": {"read": true, "write": true, "other": ["create", "import", "export", "update"]}}, "active": true}

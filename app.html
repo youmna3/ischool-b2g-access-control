@@ -1,0 +1,1875 @@
+<title>iSchool Access Control Center</title>
+<meta name="description" content="Review and manage every B2G user's roles, permissions and department hierarchy — every change tracked, never hidden.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Default to the light (white) theme regardless of the visitor's OS/browser
+  // dark-mode preference — set as early as possible, before first paint, so
+  // there's no flash of the dark palette. A per-viewer choice, if one was
+  // saved, wins over the default; system dark-mode preference never overrides
+  // this app's explicit light/dark toggle.
+  (function(){
+    try{
+      var saved = localStorage.getItem('ischool-b2g-theme');
+      document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : 'light');
+    }catch(e){
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  })();
+</script>
+<style>
+  :root{
+    color-scheme: light;
+    --blue:#056FEC; --blue-dark:#043FAD; --blue-light:#05ACFF;
+    --orange:#FF7F1C; --yellow:#FFD700;
+    --bg:#FFFFFF; --surface:#FFFFFF; --surface-2:#F4F7FB; --border:#E4E9F1;
+    --text:#1F2A55; --text-muted:#4D6079; --text-faint:#8496AC;
+    --success-bg:#E4F8EA; --success:#0EAA3A; --success-dark:#0A852D;
+    --danger-bg:#FFEAEA; --danger:#DE1F1F; --danger-dark:#AA1818;
+    --warning-bg:#FCF9E5; --warning:#B4810B; --warning-strong:#FFBB1C;
+    --shadow: 0 1px 2px rgba(31,42,85,.04), 0 10px 28px rgba(31,42,85,.07);
+    --shadow-sm: 0 1px 3px rgba(31,42,85,.07);
+    --radius:16px; --radius-sm:10px;
+    font-family:'Inter',system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0B1220; --surface:#121B2E; --surface-2:#182338; --border:#243250;
+      --text:#EAF1FB; --text-muted:#9FB3CE; --text-faint:#6E85A8;
+      --blue:#4C9AFF; --blue-dark:#2E6FD9; --blue-light:#6BC8FF;
+      --success-bg:rgba(14,170,58,.16); --success:#3DDC72; --success-dark:#8FF0B0;
+      --danger-bg:rgba(222,31,31,.18); --danger:#FF6B6B; --danger-dark:#FFAFAF;
+      --warning-bg:rgba(255,187,28,.14); --warning:#FFC94D; --warning-strong:#FFD87A;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#0B1220; --surface:#121B2E; --surface-2:#182338; --border:#243250;
+    --text:#EAF1FB; --text-muted:#9FB3CE; --text-faint:#6E85A8;
+    --blue:#4C9AFF; --blue-dark:#2E6FD9; --blue-light:#6BC8FF;
+    --success-bg:rgba(14,170,58,.16); --success:#3DDC72; --success-dark:#8FF0B0;
+    --danger-bg:rgba(222,31,31,.18); --danger:#FF6B6B; --danger-dark:#FFAFAF;
+    --warning-bg:rgba(255,187,28,.14); --warning:#FFC94D; --warning-strong:#FFD87A;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;}
+  h1,h2,h3,h4{font-family:'Baloo 2',system-ui,sans-serif;margin:0;text-wrap:balance;letter-spacing:-.01em;}
+  button,input,select,textarea{font-family:inherit;color:inherit;}
+  a{color:var(--blue);}
+  .tabular{font-variant-numeric:tabular-nums;}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
+
+  /* ---------- layout ---------- */
+  #app{display:flex;min-height:100vh;}
+  .sidebar{
+    width:230px;flex:none;background:var(--surface);border-right:1px solid var(--border);
+    padding:18px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;overflow-y:auto;
+  }
+  .brand{display:flex;align-items:center;gap:8px;padding:6px 8px 18px;}
+  .brand svg{height:26px;width:auto;display:block;}
+  .brand .badge{font-size:10px;font-weight:700;background:var(--orange);color:#fff;padding:2px 6px;border-radius:6px;letter-spacing:.03em;}
+  .navlink{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--radius-sm);color:var(--text-muted);font-weight:600;font-size:13.5px;cursor:pointer;border:none;background:none;text-align:left;width:100%;}
+  .navlink svg{width:18px;height:18px;flex:none;opacity:.85;}
+  .navlink:hover{background:var(--surface-2);color:var(--text);}
+  .navlink.active{background:var(--blue);color:#fff;}
+  .navlink.active svg{opacity:1;}
+  .nav-section-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-faint);font-weight:700;padding:14px 12px 6px;}
+  .sidebar-foot{margin-top:auto;padding:10px 12px;font-size:11px;color:var(--text-faint);border-top:1px solid var(--border);padding-top:12px;}
+
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;}
+  .topbar{
+    position:sticky;top:0;z-index:20;background:var(--surface);border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:12px;padding:12px 22px;flex-wrap:wrap;
+  }
+  .topbar h1{font-size:19px;}
+  .topbar .spacer{flex:1;}
+  .viewer-pill{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;padding:5px 6px 5px 12px;font-size:12.5px;font-weight:600;}
+  .viewer-pill select{width:auto;max-width:220px;background:none;border:none;font-weight:700;font-size:12.5px;color:var(--blue);cursor:pointer;padding:0 2px;}
+  .toolbar select{width:auto;}
+  .avatar-dot{width:8px;height:8px;border-radius:50%;background:var(--success);flex:none;}
+  .content{padding:22px;max-width:1320px;width:100%;margin:0 auto;}
+
+  /* ---------- buttons ---------- */
+  .btn{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13px;padding:9px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;white-space:nowrap;transition:border-color .12s,color .12s,background .12s,box-shadow .12s;}
+  .btn:hover{border-color:var(--blue);color:var(--blue);}
+  .btn svg{width:15px;height:15px;}
+  .btn-primary{background:var(--blue);border-color:var(--blue);color:#fff;box-shadow:0 1px 2px rgba(5,111,236,.15),0 4px 12px rgba(5,111,236,.18);}
+  .btn-primary:hover{background:var(--blue-dark);border-color:var(--blue-dark);color:#fff;box-shadow:0 1px 2px rgba(5,111,236,.2),0 6px 16px rgba(5,111,236,.24);}
+  .btn-danger{color:var(--danger);}
+  .btn-danger:hover{border-color:var(--danger);color:var(--danger);}
+  .btn-ghost{border-color:transparent;background:none;}
+  .btn-ghost:hover{background:var(--surface-2);border-color:transparent;color:var(--text);}
+  .btn-ghost.btn-danger:hover{background:var(--danger-bg);color:var(--danger);}
+  .btn-sm{padding:5px 9px;font-size:12px;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+
+  /* ---------- cards / tiles ---------- */
+  .grid{display:grid;gap:14px;}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow-sm);transition:box-shadow .15s,border-color .15s;}
+  .card:hover{box-shadow:var(--shadow);}
+  .kpi .label{font-size:11.5px;color:var(--text-faint);font-weight:700;text-transform:uppercase;letter-spacing:.05em;}
+  .kpi .value{font-family:'Baloo 2';font-size:30px;margin-top:4px;}
+  .kpi .sub{font-size:12px;color:var(--text-muted);margin-top:2px;}
+
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm);overflow:hidden;}
+  .panel-head{display:flex;align-items:center;gap:10px;padding:15px 20px;border-bottom:1px solid var(--border);background:var(--surface-2);flex-wrap:wrap;}
+  .panel-head h3{font-size:15px;}
+  .panel-body{padding:16px 18px;}
+
+  /* ---------- table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);white-space:nowrap;}
+  td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tr.row-clickable{cursor:pointer;transition:background .1s;}
+  tr.row-clickable:hover td{background:var(--surface-2);}
+  tr.deleted-row td{opacity:.5;}
+  .table-wrap{overflow-x:auto;}
+  .name-cell{display:flex;align-items:center;gap:10px;}
+  .avatar-circle{width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none;}
+  .name-cell .who{display:flex;flex-direction:column;line-height:1.3;}
+  .name-cell .who b{font-size:13px;}
+  .name-cell .who span{font-size:11.5px;color:var(--text-faint);}
+
+  /* ---------- chips / pills ---------- */
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap;}
+  .pill-success{background:var(--success-bg);color:var(--success-dark);}
+  .pill-danger{background:var(--danger-bg);color:var(--danger-dark);}
+  .pill-warning{background:var(--warning-bg);color:var(--warning);}
+  .pill-neutral{background:var(--surface-2);color:var(--text-muted);}
+  .pill-blue{background:rgba(5,111,236,.12);color:var(--blue);}
+  .chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:4px 5px 4px 10px;border-radius:99px;background:var(--surface-2);border:1px solid var(--border);}
+  .chip button{border:none;background:none;color:var(--text-faint);cursor:pointer;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;}
+  .chip button:hover{background:var(--danger-bg);color:var(--danger);}
+  .strike{text-decoration:line-through;opacity:.6;}
+
+  /* ---------- forms ---------- */
+  label{font-size:12px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:5px;}
+  input[type=text],input[type=email],input[type=search],select,textarea{
+    width:100%;padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13.5px;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--blue-light);outline-offset:1px;}
+  .field{margin-bottom:13px;}
+  .field-row{display:flex;gap:10px;}
+  .field-row > *{flex:1;}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+  .toolbar input[type=search]{max-width:260px;}
+  .toolbar select{width:auto;}
+
+  /* ---------- drawer / modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(10,16,30,.45);z-index:90;display:flex;justify-content:flex-end;}
+  .overlay.modal-center{justify-content:center;align-items:center;}
+  .drawer{width:min(560px,100%);height:100%;background:var(--surface);box-shadow:var(--shadow);overflow-y:auto;padding:22px;animation:slidein .18s ease;}
+  @keyframes slidein{from{transform:translateX(24px);opacity:.6}to{transform:translateX(0);opacity:1}}
+  .modal{width:min(480px,92vw);max-height:88vh;overflow-y:auto;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px;}
+  .drawer-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:10px;}
+  .close-x{border:none;background:var(--surface-2);width:30px;height:30px;border-radius:50%;cursor:pointer;color:var(--text-muted);font-size:15px;flex:none;}
+  .section-title{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-faint);font-weight:700;margin:20px 0 8px;}
+  .section-title:first-child{margin-top:0;}
+
+  /* ---------- module permission grid ---------- */
+  .module-row{display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid var(--border);border-radius:var(--radius-sm);}
+  .module-row:hover{background:var(--surface-2);}
+  .module-row .modname{width:190px;flex:none;font-weight:700;font-size:12.5px;}
+  .module-row .modactions{flex:1;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:flex-end;}
+  .checkchip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;border:1px solid var(--border);cursor:pointer;background:var(--surface);user-select:none;}
+  .checkchip.on{background:var(--blue);border-color:var(--blue);color:#fff;}
+  .checkchip.on.removable:hover{background:var(--danger);border-color:var(--danger);}
+  /* toggle switch, used for module read/write */
+  .toggle-field{display:inline-flex;align-items:center;gap:8px;}
+  .toggle{position:relative;display:inline-block;width:36px;height:21px;flex:none;cursor:pointer;}
+  .toggle .track{position:absolute;inset:0;background:var(--border);border-radius:99px;transition:background .15s;}
+  .toggle .track::after{content:'';position:absolute;top:2px;left:2px;width:17px;height:17px;background:#fff;border-radius:50%;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.25);}
+  .toggle.on .track{background:var(--blue);}
+  .toggle.on .track::after{transform:translateX(15px);}
+  .toggle-label{font-size:12.5px;font-weight:600;color:var(--text-muted);user-select:none;}
+
+  /* ---------- misc ---------- */
+  .empty{padding:40px 20px;text-align:center;color:var(--text-faint);}
+  .empty svg{width:40px;height:40px;opacity:.5;margin-bottom:10px;}
+  .banner{display:flex;gap:10px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;font-size:12.5px;color:var(--text-muted);margin-bottom:16px;}
+  .banner b{color:var(--text);}
+  .toast-wrap{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;}
+  .toast{background:var(--text);color:var(--bg);padding:10px 16px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;box-shadow:var(--shadow);animation:toastin .15s ease;}
+  @keyframes toastin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+  .hidden{display:none!important;}
+  .muted{color:var(--text-faint);}
+  .flex-between{display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .tag-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .divider{height:1px;background:var(--border);margin:14px 0;}
+  .link-btn{background:none;border:none;color:var(--blue);font-weight:600;font-size:12.5px;cursor:pointer;padding:0;}
+  .bar-row{display:grid;grid-template-columns:110px 1fr 46px;gap:10px;align-items:center;font-size:12.5px;padding:6px 0;}
+  .bar-track{height:8px;background:var(--surface-2);border-radius:99px;overflow:hidden;}
+  .bar-fill{height:100%;background:var(--blue);border-radius:99px;}
+  .pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;padding:12px 18px;font-size:12.5px;color:var(--text-muted);}
+
+  @media (max-width:820px){
+    .sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .18s ease;z-index:99;box-shadow:var(--shadow);}
+    .sidebar.open{transform:translateX(0);}
+    .menu-btn{display:inline-flex!important;}
+    .content{padding:14px;}
+    .topbar{padding:10px 14px;}
+    .module-row{flex-direction:column;align-items:flex-start;}
+    .module-row .modname{width:auto;}
+    .module-row .modactions{justify-content:flex-start;}
+  }
+  .menu-btn{display:none;border:none;background:none;color:var(--text);width:34px;height:34px;border-radius:8px;align-items:center;justify-content:center;cursor:pointer;}
+  .menu-btn:hover{background:var(--surface-2);}
+  .auth-screen{position:fixed;inset:0;z-index:1000;background:linear-gradient(145deg,#eef7ff,#fff 48%,#fff5e9);display:grid;place-items:center;padding:22px;}
+  .auth-card{width:min(440px,100%);background:var(--surface);border:1px solid var(--border);border-radius:24px;padding:30px;box-shadow:0 24px 70px rgba(31,42,85,.16);}
+  .auth-logo{margin-bottom:24px}.auth-logo svg{height:36px;width:auto}.auth-card h1{font-size:28px}.auth-card p{color:var(--text-muted);font-size:13px;line-height:1.6;margin:4px 0 22px}
+  .auth-error{display:none;background:var(--danger-bg);color:var(--danger-dark);padding:10px 12px;border-radius:10px;font-size:12px;margin-bottom:12px}
+  .account-pill{display:flex;align-items:center;gap:9px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;padding:5px 10px 5px 6px;font-size:12px}.account-pill .avatar-circle{width:28px;height:28px}.account-meta{line-height:1.15}.account-meta small{display:block;color:var(--text-faint);text-transform:capitalize}
+  .hidden{display:none!important}
+</style>
+
+<div class="auth-screen" id="authScreen">
+  <form class="auth-card" id="loginForm">
+    <div class="auth-logo" id="authLogo"></div>
+    <h1>Access Control Center</h1>
+    <p>Sign in with your organization account. Every page and data request is protected by your assigned access level.</p>
+    <div class="auth-error" id="authError"></div>
+    <div class="field"><label>Email</label><input type="email" id="loginEmail" autocomplete="username" required></div>
+    <div class="field"><label>Password</label><input type="password" id="loginPassword" autocomplete="current-password" required style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg);font-size:13.5px"></div>
+    <button class="btn btn-primary" id="loginBtn" type="submit" style="width:100%;justify-content:center;margin-top:6px">Sign in</button>
+    <button class="btn btn-ghost" id="resetPasswordBtn" type="button" style="width:100%;justify-content:center;margin-top:6px">Send password reset email</button>
+  </form>
+</div>
+
+<div id="app">
+  <nav class="sidebar" id="sidebar">
+    <div class="brand" id="brandLogo"></div>
+    <button class="navlink active" data-view="dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      Dashboard
+    </button>
+    <button class="navlink" data-view="users">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c0-3.6 2.9-6.2 6.5-6.2s6.5 2.6 6.5 6.2"/><circle cx="17.5" cy="8.5" r="2.6"/><path d="M16 13.7c2.9.3 5 2.6 5 5.8"/></svg>
+      Users
+    </button>
+    <button class="navlink" data-view="roles">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v5c0 5-3.2 8-7 10-3.8-2-7-5-7-10V6z"/><path d="M9.3 12l1.9 1.9 3.6-3.8"/></svg>
+      Roles &amp; Permissions
+    </button>
+    <button class="navlink" data-view="departments">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21V9l8-5 8 5v12"/><path d="M9 21v-6h6v6"/><path d="M9 9.5h.01M15 9.5h.01"/></svg>
+      Departments &amp; Delegation
+    </button>
+    <button class="navlink" data-view="permissions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M7 14h2M12 14h5"/></svg>
+      Permissions Catalog
+    </button>
+    <button class="navlink" data-view="audit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6l1 3h3v3l-2 12H5L3 9V6h3z"/><path d="M9 12h6M9 16h6"/></svg>
+      Audit Log
+    </button>
+    <button class="navlink" data-view="accounts">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v5c0 5-3.2 8-7 10-3.8-2-7-5-7-10V6z"/><circle cx="12" cy="10" r="2.5"/><path d="M8.5 16c.8-2 2-3 3.5-3s2.7 1 3.5 3"/></svg>
+      App Accounts
+    </button>
+    <div class="sidebar-foot">iSchool B2G Access Control<br>Secure admin portal · v2.0</div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <button class="menu-btn" id="menuBtn" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+      </button>
+      <h1 id="viewTitle">Dashboard</h1>
+      <div class="spacer"></div>
+      <div class="account-pill" id="accountPill">
+        <div class="avatar-circle" id="accountAvatar">?</div>
+        <div class="account-meta"><b id="accountName">Account</b><small id="accountRole">loading</small></div>
+      </div>
+      <button class="btn btn-ghost" id="signOutBtn">Sign out</button>
+      <button class="btn" id="themeToggleBtn" title="Switch to dark theme" aria-label="Toggle light/dark theme">
+        <svg id="themeIconSun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg id="themeIconMoon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.8A9 9 0 1111.2 3 7 7 0 0021 12.8z"/></svg>
+      </button>
+      <button class="btn" id="exportBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        Export
+      </button>
+    </div>
+    <div class="content" id="content">
+      <div class="empty">Loading access data…</div>
+    </div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="actionModalRoot"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* =========================================================================
+   iSchool Access Control Center
+   Supabase-backed application with authenticated, row-level access control.
+   ========================================================================= */
+
+const LOGO_PRIMARY = `<svg viewBox="0 0 481 138" xmlns="http://www.w3.org/2000/svg"><path d="M473.385 51.418C473.385 51.7433 473.272 52.0361 473.028 52.2801C472.784 52.5241 472.491 52.6542 472.149 52.6542C471.905 52.6542 471.678 52.5891 471.466 52.459C471.255 52.3289 471.108 52.1337 471.011 51.906L469.726 48.848H467.888V51.418C467.888 51.7596 467.774 52.0524 467.53 52.2964C467.286 52.5403 466.993 52.6542 466.652 52.6542H466.619C466.277 52.6542 465.985 52.5403 465.741 52.2964C465.497 52.0524 465.383 51.7596 465.383 51.418V44.4563C465.383 44.0659 465.48 43.6918 465.676 43.3502C465.871 43.0086 466.147 42.7321 466.489 42.5369C466.83 42.3417 467.205 42.2441 467.595 42.2441H469.628C470.929 42.2441 471.905 42.5207 472.556 43.0574C473.207 43.5942 473.516 44.4075 473.516 45.481V45.5298C473.516 46.0991 473.402 46.5871 473.19 47.0263C472.963 47.4492 472.654 47.7908 472.231 48.0022L471.889 48.1811L473.239 50.8812C473.337 51.0602 473.385 51.2391 473.385 51.4343V51.418ZM470.62 46.4407C470.897 46.2618 471.027 45.9853 471.027 45.6437V45.5949C471.027 44.928 470.506 44.6027 469.465 44.6027H467.888V46.7335H469.465C469.97 46.7335 470.36 46.6359 470.637 46.457L470.62 46.4407Z" fill="#056FEC"/><path d="M469.482 58.4129C463.333 58.4129 458.34 53.4194 458.34 47.2709C458.34 41.1225 463.333 36.1289 469.482 36.1289C475.63 36.1289 480.624 41.1225 480.624 47.2709C480.624 53.4194 475.63 58.4129 469.482 58.4129ZM469.482 38.4874C464.635 38.4874 460.682 42.44 460.682 47.2872C460.682 52.1344 464.635 56.0869 469.482 56.0869C474.329 56.0869 478.281 52.1344 478.281 47.2872C478.281 42.44 474.329 38.4874 469.482 38.4874Z" fill="#056FEC"/><path d="M113.461 50.1813C110.533 28.6943 95.8288 8.80132 74.6348 2.50649C50.6431 -5.26852 24.667 6.13374 7.24657 21.7488C3.37536 25.2134 8.30383 31.1667 12.419 27.9786C33.8245 10.1188 66.9575 1.88839 87.4846 24.2049C94.5439 31.7034 98.2687 40.7634 99.2609 50.1813H113.461Z" fill="#FFD700"/><path d="M97.8296 68.431C95.2271 78.8248 89.6968 88.6981 81.8406 96.3104C72.0975 106.314 60.3863 115.049 48.2847 118.139C30.8317 122.889 14.5662 112.706 22.3737 93.5615C30.0022 75.1162 45.6009 62.9982 65.9491 54.4913L64.9406 52.3767C78.7013 44.2927 66.128 23.2123 52.2047 30.9873C38.3464 39.3316 26.1798 50.3598 15.5096 63.6651C2.57846 79.2802 -6.90437 104.427 6.49846 123.035C23.4146 145.937 56.8729 139.463 76.0988 124.222C94.4789 110.624 109.638 91.4958 113.136 68.4473H97.8296V68.431Z" fill="#FFD700"/><path d="M72.8942 73.3927L74.2117 108.608C74.472 115.277 70.7472 119.539 64.4524 119.783C58.1576 120.026 54.1075 116.058 53.8635 109.389L52.546 74.1735C52.2858 67.5045 56.0106 63.2429 62.3053 62.9989C68.6001 62.7549 72.6502 66.7238 72.8942 73.3927Z" fill="#056FEC"/><path d="M215.982 101.953C211.363 108.183 203.962 112.314 194.967 113.567C176.62 116.104 162.452 105.808 160.013 88.2899C157.589 70.7718 168.406 56.9947 186.753 54.4573C194.821 53.3349 202.173 54.8151 208.582 59.0442C210.696 60.5406 212.062 62.7202 212.42 65.3065C213.185 70.8043 210.062 74.9195 204.564 75.684C202.108 76.0256 199.896 75.5051 198.074 74.4478C194.837 72.6261 192.153 72.0568 189.225 72.4634C182.801 73.358 179.125 78.6281 180.084 85.5248C181.044 92.4214 186.021 96.4879 192.446 95.5932C196.073 95.089 198.903 93.2672 201.034 90.5834C202.872 88.4201 204.873 87.314 207.199 86.9887C212.811 86.2079 216.926 89.3309 217.69 94.8288C218.064 97.5126 217.332 100.001 215.95 101.986L215.982 101.953Z" fill="#056FEC"/><path d="M283.323 88.2749L280.769 110.429C280.021 116.87 275.808 120.432 269.725 119.716C263.625 119.017 260.339 114.593 261.088 108.152L263.381 88.3562C264.145 81.671 261.527 77.6859 255.785 77.0353C249.458 76.3033 245.586 80.0119 244.724 87.5104L242.594 106.021C241.845 112.462 237.633 116.024 231.549 115.308C225.45 114.609 222.164 110.185 222.912 103.744L230.134 41.1694C230.882 34.7282 235.095 31.166 241.178 31.8817C247.278 32.5811 250.564 37.0054 249.815 43.4466L247.457 63.8438L247.685 63.8763C251.653 60.2978 256.924 58.8827 263.137 59.5984C278.248 61.3389 285.291 71.4236 283.339 88.2911L283.323 88.2749Z" fill="#056FEC"/><path d="M320.684 59.0293C339.211 59.0293 351.817 71.1798 351.817 88.8769C351.817 106.574 339.194 118.724 320.684 118.724C302.174 118.724 289.536 106.574 289.536 88.8769C289.536 71.1798 302.158 59.0293 320.684 59.0293ZM320.684 100.556C327.174 100.556 331.533 95.8386 331.533 88.8769C331.533 81.9151 327.174 77.1981 320.684 77.1981C314.194 77.1981 309.835 81.9151 309.835 88.8769C309.835 95.8386 314.194 100.556 320.684 100.556Z" fill="#056FEC"/><path d="M389.194 56.1816C407.721 56.1816 420.327 68.3321 420.327 86.0292C420.327 103.726 407.705 115.877 389.194 115.877C370.684 115.877 358.046 103.726 358.046 86.0292C358.046 68.3321 370.668 56.1816 389.194 56.1816ZM389.194 97.6917C395.684 97.6917 400.044 92.9747 400.044 86.013C400.044 79.0512 395.684 74.3342 389.194 74.3342C382.704 74.3342 378.345 79.0512 378.345 86.013C378.345 92.9747 382.704 97.6917 389.194 97.6917Z" fill="#056FEC"/><path d="M451.557 47.7262L444.677 110.333C443.961 116.79 439.781 120.353 433.681 119.686C427.581 119.019 424.263 114.611 424.979 108.17L431.859 45.5629C432.575 39.1217 436.755 35.5432 442.855 36.2101C448.954 36.877 452.273 41.285 451.557 47.7262Z" fill="#056FEC"/><path d="M126.213 117.536C115.38 118.708 104.271 116.43 94.9182 111.144C92.1694 109.615 90.2175 106.622 89.8597 103.336C89.2416 97.6597 93.2592 92.7149 99.0009 92.0968C101.262 91.8528 103.36 92.2758 105.377 93.3818C111.818 97.1229 118.032 98.5869 124.408 97.9037C126.457 97.676 133.126 96.6024 132.638 92.0318V91.8041C132.345 89.3967 131.19 87.6726 118.064 85.7695C102.742 83.5736 89.9085 80.353 88.0379 62.9487V62.7372C86.3951 47.7077 97.2768 35.9151 114.502 34.0608C124.017 33.036 132.898 34.5162 140.917 38.4688C143.357 39.5749 146.204 42.3075 146.675 46.6179C147.293 52.2946 143.276 57.2394 137.534 57.8575C135.598 58.069 133.809 57.7762 131.906 56.9304C126.002 54.2628 120.943 53.2055 116.405 53.7098C111.818 54.214 109.037 56.2472 109.313 58.8985V59.1262C109.655 62.1191 111.021 63.3553 125.026 65.3723C138.998 67.438 152.157 71.5858 153.913 87.8677V88.0955C155.654 103.987 144.772 115.568 126.197 117.585L126.213 117.536Z" fill="#056FEC"/><path d="M60.11 55.7925C67.6649 55.7925 73.7893 49.668 73.7893 42.1131C73.7893 34.5581 67.6649 28.4336 60.11 28.4336C52.5551 28.4336 46.4307 34.5581 46.4307 42.1131C46.4307 49.668 52.5551 55.7925 60.11 55.7925Z" fill="#FF7F1C"/></svg>`;
+
+const LOGO_INVERTED = `<svg viewBox="0 0 329 101" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(#lg)"><path d="M323.766 38.2117C323.766 38.4451 323.699 38.6452 323.532 38.8119C323.365 38.9786 323.165 39.0786 322.932 39.0786C322.765 39.0786 322.599 39.0453 322.465 38.9453C322.332 38.8452 322.232 38.7118 322.165 38.5785L321.298 36.4778H320.031V38.245C320.031 38.4784 319.964 38.6785 319.798 38.8452C319.631 39.0119 319.431 39.0786 319.197 39.0786H319.164C318.931 39.0786 318.731 39.0119 318.564 38.8452C318.397 38.6785 318.331 38.4784 318.331 38.245V33.4769C318.331 33.2102 318.397 32.9434 318.531 32.71C318.664 32.4766 318.864 32.2765 319.097 32.1432C319.331 32.0098 319.598 31.9431 319.864 31.9431H321.265C322.165 31.9431 322.832 32.1432 323.265 32.51C323.699 32.8767 323.932 33.4436 323.932 34.1771V34.2105C323.932 34.6106 323.866 34.944 323.699 35.2441C323.532 35.5442 323.332 35.7776 323.032 35.911L322.765 36.011L323.699 37.8449C323.732 37.9783 323.766 38.0783 323.766 38.2117ZM321.898 34.844C322.098 34.7106 322.165 34.5439 322.165 34.3105V34.2772C322.165 33.8104 321.798 33.6103 321.098 33.6103H320.031V35.0774H321.098C321.432 35.0107 321.698 34.944 321.898 34.844Z" fill="white"/><path d="M321.131 43.0131C316.93 43.0131 313.529 39.6121 313.529 35.4108C313.529 31.2095 316.93 27.8085 321.131 27.8085C325.333 27.8085 328.734 31.2095 328.734 35.4108C328.734 39.6121 325.299 43.0131 321.131 43.0131ZM321.131 29.3756C317.83 29.3756 315.13 32.0764 315.13 35.3774C315.13 38.6785 317.83 41.3793 321.131 41.3793C324.432 41.3793 327.133 38.6785 327.133 35.3774C327.133 32.0764 324.432 29.3756 321.131 29.3756Z" fill="white"/><path d="M77.6236 37.3781C75.623 22.6736 65.5533 9.06943 51.0822 4.76811C34.6772 -0.566849 16.9051 7.23553 4.96812 17.9388C2.30064 20.3062 5.70168 24.3741 8.50253 22.2068C23.1403 10.003 45.8139 4.36799 59.8515 19.6393C64.6863 24.7742 67.2205 30.9761 67.8873 37.4114H77.6236V37.3781Z" fill="#FF7F1C"/><path d="M66.9204 49.8486C65.1532 56.9508 61.3521 63.7195 55.9838 68.9211C49.3151 75.7565 41.3126 81.7583 33.0434 83.859C21.1065 87.1266 9.96972 80.1245 15.338 67.0539C20.5396 54.45 31.2095 46.1475 45.1471 40.3457L44.4469 38.9119C53.8498 33.3769 45.2472 18.9725 35.7443 24.2741C26.2747 29.9759 17.9388 37.5115 10.6366 46.6143C1.80056 57.2842 -4.70142 74.4895 4.46805 87.2267C16.0382 102.898 38.9119 98.4634 52.0826 88.0269C64.6531 78.7241 75.0229 65.6534 77.4236 49.882H66.9204V49.8486Z" fill="#FF7F1C"/><path d="M49.8485 53.2496L50.7488 77.3236C50.9155 81.8917 48.3814 84.7926 44.0801 84.9593C39.7788 85.126 37.0113 82.4252 36.8445 77.8571L35.9443 53.7831C35.7776 49.215 38.3117 46.3141 42.613 46.1474C46.9143 45.9807 49.6818 48.6815 49.8485 53.2496Z" fill="white"/><path d="M147.745 72.7889C144.578 77.0569 139.509 79.8911 133.374 80.7247C120.837 82.4586 111.134 75.4231 109.467 63.4194C107.8 51.4157 115.202 42.0129 127.772 40.279C133.274 39.5121 138.309 40.5124 142.71 43.4133C144.144 44.447 145.111 45.9474 145.344 47.6813C145.878 51.4491 143.744 54.25 139.976 54.7834C138.309 55.0169 136.775 54.6501 135.541 53.9165C133.341 52.6828 131.474 52.2827 129.473 52.5494C125.072 53.1496 122.571 56.7507 123.204 61.4855C123.871 66.1869 127.272 68.9878 131.64 68.3876C134.108 68.0542 136.075 66.7871 137.509 64.9532C138.776 63.4861 140.143 62.7192 141.743 62.4858C145.578 61.9523 148.412 64.0863 148.912 67.8541C149.179 69.7213 148.679 71.4219 147.745 72.7889Z" fill="white"/><path d="M193.792 63.4193L192.059 78.5573C191.558 82.9586 188.657 85.3927 184.49 84.9259C180.322 84.4591 178.088 81.4248 178.588 77.0235L180.155 63.486C180.688 58.918 178.888 56.1838 174.953 55.7503C170.619 55.2502 167.985 57.7843 167.384 62.9192L165.917 75.5897C165.417 79.9911 162.516 82.4251 158.348 81.9583C154.18 81.4915 151.946 78.4573 152.446 74.0559L157.381 31.2095C157.881 26.8082 160.782 24.3741 164.95 24.8409C169.118 25.341 171.386 28.342 170.852 32.7433L169.252 46.6809L169.418 46.7142C172.152 44.2802 175.754 43.3132 179.988 43.78C190.325 44.9804 195.126 51.8825 193.792 63.4193Z" fill="white"/><path d="M219.367 43.4132C232.038 43.4132 240.674 51.7157 240.674 63.8194C240.674 75.9231 232.038 84.2257 219.367 84.2257C206.697 84.2257 198.061 75.9231 198.061 63.8194C198.061 51.7157 206.697 43.4132 219.367 43.4132ZM219.367 71.8219C223.802 71.8219 226.803 68.5876 226.803 63.8194C226.803 59.0513 223.802 55.817 219.367 55.817C214.932 55.817 211.931 59.0513 211.931 63.8194C211.931 68.5876 214.932 71.8219 219.367 71.8219Z" fill="white"/><path d="M266.215 41.4794C278.885 41.4794 287.521 49.7819 287.521 61.8856C287.521 73.9893 278.885 82.2918 266.215 82.2918C253.544 82.2918 244.908 73.9893 244.908 61.8856C244.908 49.7819 253.544 41.4794 266.215 41.4794ZM266.215 69.888C270.649 69.888 273.65 66.6537 273.65 61.8856C273.65 57.1175 270.649 53.8832 266.215 53.8832C261.78 53.8832 258.779 57.1175 258.779 61.8856C258.812 66.6537 261.78 69.888 266.215 69.888Z" fill="white"/><path d="M308.861 35.7109L304.16 78.524C303.659 82.9253 300.792 85.3928 296.624 84.9259C292.456 84.4591 290.189 81.4582 290.656 77.0569L295.357 34.2438C295.857 29.8425 298.725 27.375 302.893 27.8419C307.094 28.2753 309.361 31.2762 308.861 35.7109Z" fill="white"/><path d="M86.3263 83.4588C78.9241 84.259 71.3218 82.6919 64.9198 79.0908C63.0526 78.0571 61.7188 75.9898 61.4521 73.7558C61.0186 69.8546 63.7861 66.4869 67.7207 66.0534C69.2545 65.8867 70.6882 66.1868 72.0887 66.9537C76.49 69.5212 80.7246 70.5215 85.0926 70.0547C86.4931 69.888 91.0611 69.1544 90.7277 66.0534V65.8867C90.561 64.2196 89.7607 63.0525 80.758 61.7521C70.2881 60.2517 61.5188 58.051 60.2184 46.1474V46.014C59.118 35.7442 66.5536 27.6751 78.3239 26.408C84.8259 25.7078 90.8944 26.7081 96.3961 29.4089C98.0633 30.1758 100.031 32.0431 100.331 34.9773C100.764 38.8785 97.9966 42.2462 94.062 42.6796C92.7283 42.813 91.5279 42.613 90.2275 42.0461C86.193 40.2122 82.7252 39.512 79.6243 39.8454C76.49 40.1789 74.5894 41.5793 74.7895 43.3799V43.5466C75.0229 45.6139 75.9565 46.4475 85.5261 47.8145C95.0957 49.215 104.065 52.0825 105.299 63.2193V63.386C106.499 74.1559 99.0302 82.0583 86.3263 83.4588Z" fill="white"/><path d="M41.1125 41.1792C46.2688 41.1792 50.4487 36.9992 50.4487 31.843C50.4487 26.6868 46.2688 22.5068 41.1125 22.5068C35.9563 22.5068 31.7764 26.6868 31.7764 31.843C31.7764 36.9992 35.9563 41.1792 41.1125 41.1792Z" fill="#FFD700"/></g><defs><clipPath id="lg"><rect width="328.9" height="100.464" fill="white"/></clipPath></defs></svg>`;
+
+document.getElementById('brandLogo').innerHTML = LOGO_PRIMARY.replace('viewBox="0 0 481 138"','viewBox="0 0 481 138" style="height:26px;width:auto;"');
+document.getElementById('authLogo').innerHTML = LOGO_PRIMARY;
+
+/* ---------------------------------------------------------------------- */
+/* State                                                                   */
+/* ---------------------------------------------------------------------- */
+const STATE = {
+  db: null,
+  supabase: null,
+  session: null,
+  profile: null,
+  downloads: null,
+  ready: false,
+  users: [],          // [{id, ...fields, roles:[...]}]
+  roles: [],
+  departments: [],
+  delegations: [],
+  permissionsCatalog: [],
+  audit: [],
+  view: 'dashboard',
+  viewer: { mode: 'viewer' },
+  accounts: [],
+  usersFilter: { q: '', dept: 'all', status: 'all', showDeleted: false, page: 1 },
+  auditFilter: { q: '', action: 'all', page: 1 },
+  permissionsFilter: { q: '' },
+  openUserId: null,
+  openRoleId: null,
+  editingRoleIdx: null,
+};
+
+const ACTOR_ADMIN = 'Admin';
+const PAGE_SIZE = 25;
+
+/* ---------------------------------------------------------------------- */
+/* Utilities                                                               */
+/* ---------------------------------------------------------------------- */
+function esc(s){
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtDate(iso){
+  if (!iso) return '—';
+  try{
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).slice(0,16);
+    return d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}) + ' ' + d.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'});
+  }catch(e){ return String(iso); }
+}
+function fmtDay(iso){
+  if (!iso) return '—';
+  try{ const d = new Date(iso); if(isNaN(d.getTime())) return String(iso).slice(0,10); return d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }
+  catch(e){ return String(iso); }
+}
+function initials(name){
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]||'')[0]||'') .concat((parts[1]||'')[0]||'').toUpperCase() || name[0].toUpperCase();
+}
+function uid(prefix){ return prefix + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function toast(msg){
+  const wrap = document.getElementById('toastWrap');
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .25s'; setTimeout(()=>t.remove(), 260); }, 2600);
+}
+function nowIso(){ return new Date().toISOString(); }
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+
+/* ---------------------------------------------------------------------- */
+/* Identity / permission helpers                                          */
+/* ---------------------------------------------------------------------- */
+function isAdminViewer(){ return STATE.profile && STATE.profile.role === 'admin'; }
+function actorLabel(){
+  return STATE.profile ? `${STATE.profile.display_name || STATE.session.user.email}${isAdminViewer() ? ' (Admin)' : ` (${STATE.profile.role})`}` : 'Unknown';
+}
+function actorRoleLabel(){ return STATE.profile ? STATE.profile.role : 'Unknown'; }
+function canSeeAllDepartments(){ return isAdminViewer(); }
+function canManageUser(u){
+  if (isAdminViewer()) return true;
+  return STATE.profile && STATE.profile.role === 'manager' && u.department === STATE.profile.department;
+}
+function canManageRoleDefinitions(){ return isAdminViewer(); }
+function canManageDelegations(){ return isAdminViewer(); }
+function scopedDepartment(){ return isAdminViewer() ? null : (STATE.profile && STATE.profile.department); }
+
+/* ---------------------------------------------------------------------- */
+/* Supabase data adapter                                                   */
+/* ---------------------------------------------------------------------- */
+function docsToArr(snap){ return snap.docs.map(d => ({ id: d.id, ...d.data() })); }
+
+class SupabaseDocumentDB {
+  constructor(client){ this.client = client; this.channels = []; }
+  collection(name){ return new SupabaseCollection(this, name); }
+  destroy(){ this.channels.forEach(c=>this.client.removeChannel(c)); this.channels=[]; }
+}
+class SupabaseCollection {
+  constructor(db,name){ this.db=db; this.name=name; this.max=1000; this.sort=null; }
+  limit(n){ this.max=n; return this; }
+  orderBy(field,direction='asc'){ this.sort={field,direction}; return this; }
+  doc(id){ return new SupabaseDocument(this.db,this.name,id); }
+  async add(data){ const id=crypto.randomUUID(); await this.doc(id).set(data); return {id}; }
+  async fetch(){
+    let q=this.db.client.from('documents').select('id,data').eq('collection',this.name).limit(this.max);
+    const {data,error}=await q; if(error) throw error;
+    let rows=(data||[]).map(r=>({id:r.id,data:()=>r.data}));
+    if(this.sort) rows.sort((a,b)=>String(a.data()[this.sort.field]||'').localeCompare(String(b.data()[this.sort.field]||''))*(this.sort.direction==='desc'?-1:1));
+    return {docs:rows};
+  }
+  onSnapshot(next,fail){
+    const load=()=>this.fetch().then(next).catch(fail||console.error); load();
+    const channel=this.db.client.channel(`documents:${this.name}:${crypto.randomUUID()}`).on('postgres_changes',{event:'*',schema:'public',table:'documents',filter:`collection=eq.${this.name}`},load).subscribe();
+    this.db.channels.push(channel); return ()=>this.db.client.removeChannel(channel);
+  }
+}
+class SupabaseDocument {
+  constructor(db,collection,id){ this.db=db; this.collection=collection; this.id=id; }
+  async set(data){ const {error}=await this.db.client.from('documents').upsert({collection:this.collection,id:this.id,data},{onConflict:'collection,id'}); if(error) throw error; }
+  async update(patch){
+    const {data:row,error:readError}=await this.db.client.from('documents').select('data').eq('collection',this.collection).eq('id',this.id).single(); if(readError) throw readError;
+    const {error}=await this.db.client.from('documents').update({data:{...row.data,...patch}}).eq('collection',this.collection).eq('id',this.id); if(error) throw error;
+  }
+  async delete(){ const {error}=await this.db.client.from('documents').delete().eq('collection',this.collection).eq('id',this.id); if(error) throw error; }
+}
+
+function showAuthError(message){ const el=document.getElementById('authError'); el.textContent=message; el.style.display=message?'block':'none'; }
+function setSignedInUi(signedIn){ document.getElementById('authScreen').classList.toggle('hidden',signedIn); document.getElementById('app').classList.toggle('hidden',!signedIn); }
+
+async function loadProfile(){
+  const {data,error}=await STATE.supabase.from('app_profiles').select('*').eq('id',STATE.session.user.id).single();
+  if(error || !data || !data.active) throw new Error('This account is not active. Ask an administrator for access.');
+  STATE.profile=data;
+  STATE.viewer={mode:data.role==='admin'?'admin':data.role,department:data.department,userName:data.display_name};
+  document.getElementById('accountName').textContent=data.display_name || STATE.session.user.email;
+  document.getElementById('accountRole').textContent=data.role+(data.department?` · ${data.department}`:'');
+  document.getElementById('accountAvatar').textContent=initials(data.display_name || STATE.session.user.email);
+}
+
+async function initData(){
+  if(STATE.db) STATE.db.destroy();
+  STATE.db = new SupabaseDocumentDB(STATE.supabase);
+  STATE.downloads = {save:async({filename,data})=>{ const url=URL.createObjectURL(data); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }};
+  STATE.db.collection('users').limit(1000).onSnapshot(snap => {
+    STATE.users = docsToArr(snap);
+    render();
+  }, err => console.error('users sub', err));
+
+  STATE.db.collection('roles').limit(500).onSnapshot(snap => {
+    STATE.roles = docsToArr(snap);
+    STATE.rolesById = {};
+    STATE.roles.forEach(r => STATE.rolesById[r.id] = r);
+    render();
+  }, err => console.error('roles sub', err));
+
+  STATE.db.collection('departments').limit(200).onSnapshot(snap => {
+    STATE.departments = docsToArr(snap).filter(d=>!d.archived);
+    render();
+  }, err => console.error('departments sub', err));
+
+  STATE.db.collection('delegations').limit(500).onSnapshot(snap => {
+    STATE.delegations = docsToArr(snap);
+    populateViewerSelect();
+    render();
+  }, err => console.error('delegations sub', err));
+
+  STATE.db.collection('auditLog').orderBy('ts','desc').limit(1000).onSnapshot(snap => {
+    STATE.audit = docsToArr(snap);
+    render();
+  }, err => console.error('audit sub', err));
+
+  STATE.db.collection('permissionsCatalog').limit(500).onSnapshot(snap => {
+    STATE.permissionsCatalog = docsToArr(snap).sort((a,b)=>a.name.localeCompare(b.name));
+    render();
+  }, err => console.error('catalog sub', err));
+
+  STATE.ready = true; render();
+}
+
+async function logAudit({action, targetUserId=null, targetUserName=null, field=null, oldValue=null, newValue=null, note=''}){
+  const target = targetUserId ? userById(targetUserId) : null;
+  await STATE.db.collection('auditLog').add({
+    ts: nowIso(), actor: actorLabel(), actorRole: actorRoleLabel(),
+    action, targetUserId, targetUserName, field,
+    oldValue: oldValue===undefined?null:oldValue, newValue: newValue===undefined?null:newValue, note,
+    department: target ? target.department : (STATE.profile && STATE.profile.department),
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Derived helpers                                                        */
+/* ---------------------------------------------------------------------- */
+function computeEffectivePermissions(user){
+  const merged = {};
+  (user.roles||[]).forEach(ra => {
+    if (ra.status !== 'active') return;
+    const role = STATE.rolesById && STATE.rolesById[ra.roleId];
+    if (!role) return;
+    Object.entries(role.permissions||{}).forEach(([mod, perm]) => {
+      if (!merged[mod]) merged[mod] = {read:false, write:false, other:new Set()};
+      merged[mod].read = merged[mod].read || !!perm.read;
+      merged[mod].write = merged[mod].write || !!perm.write;
+      (perm.other||[]).forEach(a => merged[mod].other.add(a));
+    });
+  });
+  // Per-user direct overrides win over whatever the role(s) derive — this is
+  // how an admin grants or revokes access for one person without touching
+  // the shared role definition.
+  Object.entries(user.permOverrides||{}).forEach(([mod, ov]) => {
+    if (!merged[mod]) merged[mod] = {read:false, write:false, other:new Set()};
+    if (ov.read !== undefined) merged[mod].read = !!ov.read;
+    if (ov.write !== undefined) merged[mod].write = !!ov.write;
+    (ov.extra||[]).forEach(a => merged[mod].other.add(a));
+    (ov.removed||[]).forEach(a => merged[mod].other.delete(a));
+  });
+  return merged;
+}
+function allModulesVocab(){
+  // Source of truth is the org-wide permissions catalog; merge in anything
+  // a role already uses that hasn't been added to the catalog yet, so
+  // nothing already in use silently disappears from the editor.
+  const vocab = {};
+  STATE.permissionsCatalog.forEach(m => { vocab[m.name] = new Set(m.actions||[]); });
+  STATE.roles.forEach(r => Object.entries(r.permissions||{}).forEach(([mod, perm])=>{
+    if (!vocab[mod]) vocab[mod] = new Set();
+    (perm.other||[]).forEach(a=>vocab[mod].add(a));
+  }));
+  return vocab;
+}
+function catalogModuleId(name){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || uid('mod'); }
+function catalogEntry(name){ return STATE.permissionsCatalog.find(m=>m.name===name); }
+function allOrgsVocab(){
+  // Everywhere an "org / intake" string is already known to the system —
+  // from every role's assigned orgs and every user's org/role history —
+  // so picking one is a choice from real data, not free typing.
+  const set = new Set();
+  STATE.roles.forEach(r => (r.orgsAssigned||[]).forEach(o=>{ if(o) set.add(o); }));
+  STATE.users.forEach(u => (u.roles||[]).forEach(ra=>{ if(ra.org) set.add(ra.org); }));
+  return Array.from(set).sort((a,b)=>a.localeCompare(b));
+}
+function allPrimaryRolesVocab(){
+  // Every "primary role" label already on record across the directory —
+  // so editing it is a pick from the real list, with room to type a new one.
+  const set = new Set();
+  STATE.users.forEach(u => { if (u.primaryRole) set.add(u.primaryRole); });
+  return Array.from(set).sort((a,b)=>a.localeCompare(b));
+}
+function userById(id){ return STATE.users.find(u => u.id === id); }
+function userHistoryTimeline(user){
+  // Everything on record for this person: the real "assigned at" (and, where
+  // the source sheet had it, "last active in that org") fact for every
+  // organization/role they've ever held, plus the full in-tool audit trail
+  // targeting them — merged into one chronological "as in the sheet" view.
+  // "Assigned" facts come straight from the roles[] record — this is the
+  // only place the real, per-assignment "Assigned At" date lives (most of
+  // it imported from the source sheet, predating this tool's audit log).
+  // Everything that happened *inside* this tool (removals, restores, role
+  // changes, overrides, status/department changes, deletion…) is already
+  // fully captured by the audit log, so it's pulled in as-is rather than
+  // re-derived, to avoid saying the same thing twice.
+  const events = [];
+  (user.roles||[]).forEach(ra => {
+    if (ra.addedAt) events.push({
+      ts: ra.addedAt, action:'role_added', pillLabel:'Assigned',
+      label:`Assigned "${ra.roleName}" on ${esc(ra.org)}`,
+      actor: ra.addedBy || 'System Import',
+    });
+  });
+  // role_added is skipped here — the roles[]-derived "Assigned" event above
+  // already states that same fact for every assignment, imported or not.
+  STATE.audit.filter(a => a.targetUserId === user.id && a.action !== 'role_added').forEach(a => {
+    events.push({ ts:a.ts, action:a.action, pillLabel:auditActionLabel(a.action), label:a.note || auditActionLabel(a.action), actor:a.actor });
+  });
+  return events.filter(e => e.ts).sort((a,b) => new Date(b.ts) - new Date(a.ts));
+}
+function roleById(id){ return STATE.rolesById ? STATE.rolesById[id] : null; }
+function activeDelegationFor(dept){ return STATE.delegations.find(d => d.department === dept && d.active); }
+function deptMemberCount(deptName){ return STATE.users.filter(u => u.department === deptName && !u.deleted).length; }
+
+/* ---------------------------------------------------------------------- */
+/* Mutations                                                              */
+/* ---------------------------------------------------------------------- */
+async function addRoleAssignment(user, org, roleId){
+  const role = roleById(roleId);
+  if (!role || !org.trim()) return;
+  const entry = { org: org.trim(), roleName: role.name, roleId, status:'active', addedAt: nowIso(), addedBy: actorLabel(), removedAt:null, removedBy:null };
+  const roles = [...(user.roles||[]), entry];
+  await STATE.db.collection('users').doc(user.id).update({ roles });
+  await logAudit({ action:'role_added', targetUserId:user.id, targetUserName:user.name, field:'roles', oldValue:null, newValue:`${org.trim()} → ${role.name}`, note:`Added role "${role.name}" for org "${org.trim()}".` });
+  toast(`Added ${role.name} on ${org.trim()} for ${user.name}`);
+}
+async function removeRoleAssignment(user, idx){
+  const roles = [...user.roles];
+  const ra = roles[idx];
+  if (!ra || ra.status !== 'active') return;
+  roles[idx] = { ...ra, status:'removed', removedAt: nowIso(), removedBy: actorLabel() };
+  await STATE.db.collection('users').doc(user.id).update({ roles });
+  await logAudit({ action:'role_removed', targetUserId:user.id, targetUserName:user.name, field:'roles', oldValue:`${ra.org} → ${ra.roleName}`, newValue:'removed (tagged, kept in history)', note:`Removed role "${ra.roleName}" for org "${ra.org}". Entry stays visible, tagged as removed.` });
+  toast(`Removed ${ra.roleName} on ${ra.org} — tagged, not hidden`);
+}
+async function restoreRoleAssignment(user, idx){
+  const roles = [...user.roles];
+  const ra = roles[idx];
+  if (!ra || ra.status !== 'removed') return;
+  roles[idx] = { ...ra, status:'active', removedAt:null, removedBy:null, addedAt: nowIso(), addedBy: actorLabel() };
+  await STATE.db.collection('users').doc(user.id).update({ roles });
+  await logAudit({ action:'role_restored', targetUserId:user.id, targetUserName:user.name, field:'roles', oldValue:'removed', newValue:`${ra.org} → ${ra.roleName}`, note:`Restored role "${ra.roleName}" for org "${ra.org}".` });
+  toast(`Restored ${ra.roleName} on ${ra.org}`);
+}
+async function changeRoleAssignment(user, idx, newRoleId){
+  const role = roleById(newRoleId);
+  if (!role) return;
+  const roles = [...user.roles];
+  const ra = roles[idx];
+  if (!ra || ra.status !== 'active' || ra.roleId === newRoleId) return;
+  const oldLabel = `${ra.org} → ${ra.roleName}`;
+  roles[idx] = { ...ra, roleName: role.name, roleId: newRoleId, modifiedAt: nowIso(), modifiedBy: actorLabel() };
+  await STATE.db.collection('users').doc(user.id).update({ roles });
+  await logAudit({ action:'role_changed', targetUserId:user.id, targetUserName:user.name, field:'roles', oldValue:oldLabel, newValue:`${ra.org} → ${role.name}`, note:`Changed the role for "${ra.org}" from "${ra.roleName}" to "${role.name}".` });
+  toast(`${ra.org} now uses ${role.name}`);
+}
+/* ---------------------------------------------------------------------- */
+/* Per-user permission overrides (on top of role-derived access)          */
+/* ---------------------------------------------------------------------- */
+async function setPermOverride(user, mod, kind, value){
+  const overrides = JSON.parse(JSON.stringify(user.permOverrides||{}));
+  if (!overrides[mod]) overrides[mod] = {};
+  overrides[mod][kind] = value;
+  await STATE.db.collection('users').doc(user.id).update({ permOverrides: overrides });
+  await logAudit({ action:'permission_override_set', targetUserId:user.id, targetUserName:user.name, field:`${mod}.${kind}`, oldValue:null, newValue:value, note:`Set a direct permission override for ${user.name}: "${mod}" ${kind} = ${value}, on top of (and independent from) their role(s).` });
+  toast(`${mod} ${kind} ${value?'granted':'revoked'} for ${user.name}`);
+}
+async function addPermOverrideAction(user, mod, action){
+  action = (action||'').trim();
+  if (!action) return;
+  const overrides = JSON.parse(JSON.stringify(user.permOverrides||{}));
+  if (!overrides[mod]) overrides[mod] = {};
+  const extra = new Set(overrides[mod].extra||[]); extra.add(action);
+  overrides[mod].extra = [...extra];
+  overrides[mod].removed = (overrides[mod].removed||[]).filter(a=>a!==action);
+  await STATE.db.collection('users').doc(user.id).update({ permOverrides: overrides });
+  await logAudit({ action:'permission_override_action_added', targetUserId:user.id, targetUserName:user.name, field:`${mod}.${action}`, oldValue:null, newValue:action, note:`Granted "${action}" on "${mod}" directly to ${user.name}, on top of their role(s).` });
+  toast(`Granted "${action}" on ${mod} to ${user.name}`);
+}
+async function removePermOverrideAction(user, mod, action){
+  const overrides = JSON.parse(JSON.stringify(user.permOverrides||{}));
+  if (!overrides[mod]) overrides[mod] = {};
+  overrides[mod].extra = (overrides[mod].extra||[]).filter(a=>a!==action);
+  const removed = new Set(overrides[mod].removed||[]); removed.add(action);
+  overrides[mod].removed = [...removed];
+  await STATE.db.collection('users').doc(user.id).update({ permOverrides: overrides });
+  await logAudit({ action:'permission_override_action_removed', targetUserId:user.id, targetUserName:user.name, field:`${mod}.${action}`, oldValue:action, newValue:null, note:`Revoked "${action}" on "${mod}" from ${user.name} directly — any role grant of it is overridden off for this person.` });
+  toast(`Revoked "${action}" on ${mod} from ${user.name}`);
+}
+async function resetPermOverride(user, mod){
+  const overrides = JSON.parse(JSON.stringify(user.permOverrides||{}));
+  if (!overrides[mod]) return;
+  delete overrides[mod];
+  await STATE.db.collection('users').doc(user.id).update({ permOverrides: overrides });
+  await logAudit({ action:'permission_override_reset', targetUserId:user.id, targetUserName:user.name, field:mod, oldValue:'override', newValue:'role default', note:`Reset "${mod}" for ${user.name} back to whatever their role(s) grant — removed the direct override.` });
+  toast(`${mod} reset to role default for ${user.name}`);
+}
+async function grantOverrideModule(user, mod){
+  mod = (mod||'').trim();
+  if (!mod) return;
+  const overrides = JSON.parse(JSON.stringify(user.permOverrides||{}));
+  if (overrides[mod]){ toast(`${mod} already has a direct override`); return; }
+  overrides[mod] = { read:true, write:false };
+  await STATE.db.collection('users').doc(user.id).update({ permOverrides: overrides });
+  await logAudit({ action:'permission_override_module_added', targetUserId:user.id, targetUserName:user.name, field:mod, oldValue:null, newValue:'read', note:`Granted "${mod}" (read) directly to ${user.name}, independent of their role(s).` });
+  toast(`Granted "${mod}" to ${user.name} — adjust read/write below`);
+}
+async function toggleUserStatus(user){
+  const next = user.status === 'Active' ? 'Inactive' : 'Active';
+  await STATE.db.collection('users').doc(user.id).update({ status: next });
+  await logAudit({ action:'status_changed', targetUserId:user.id, targetUserName:user.name, field:'status', oldValue:user.status, newValue:next, note:`Status changed from ${user.status} to ${next}.` });
+  toast(`${user.name} is now ${next}`);
+}
+async function changeDepartment(user, dept){
+  const old = user.department;
+  if (old === dept) return;
+  await STATE.db.collection('users').doc(user.id).update({ department: dept });
+  await logAudit({ action:'department_changed', targetUserId:user.id, targetUserName:user.name, field:'department', oldValue:old, newValue:dept, note:`Moved from ${old} to ${dept}.` });
+  toast(`${user.name} moved to ${dept}`);
+}
+async function changePrimaryRole(user, role){
+  role = (role||'').trim();
+  const old = user.primaryRole || null;
+  if (!role || role === old) return;
+  await STATE.db.collection('users').doc(user.id).update({ primaryRole: role });
+  await logAudit({ action:'primary_role_changed', targetUserId:user.id, targetUserName:user.name, field:'primaryRole', oldValue:old, newValue:role, note:`Primary role changed from "${old||'—'}" to "${role}".` });
+  toast(`${user.name}'s primary role is now "${role}"`);
+}
+async function softDeleteUser(user){
+  await STATE.db.collection('users').doc(user.id).update({ deleted:true, deletedAt: nowIso(), deletedBy: actorLabel() });
+  await logAudit({ action:'user_deleted', targetUserId:user.id, targetUserName:user.name, field:'deleted', oldValue:false, newValue:true, note:`User removed from active directory. Record kept and tagged — not erased.` });
+  toast(`${user.name} deleted — kept in history, tagged`);
+}
+async function restoreUser(user){
+  await STATE.db.collection('users').doc(user.id).update({ deleted:false, deletedAt:null, deletedBy:null });
+  await logAudit({ action:'user_restored', targetUserId:user.id, targetUserName:user.name, field:'deleted', oldValue:true, newValue:false, note:`User restored to the active directory.` });
+  toast(`${user.name} restored`);
+}
+async function createUser(fields){
+  const doc = {
+    name: fields.name, email: fields.email, primaryRole: fields.primaryRole || null,
+    status:'Active', department: fields.department, userType: fields.userType || 'Admin',
+    teamLead:false, deptHead:false, homeOrg:null, orgCount:0, lastActivity:null, createdAt: nowIso(),
+    roles: [], deleted:false, deletedAt:null, deletedBy:null,
+  };
+  const ref = await STATE.db.collection('users').add(doc);
+  await logAudit({ action:'user_added', targetUserId:ref.id, targetUserName:fields.name, field:'user', oldValue:null, newValue:fields.department, note:`New user added to ${fields.department} by ${actorLabel()}.` });
+  toast(`${fields.name} added to ${fields.department}`);
+  return ref.id;
+}
+async function togglePermission(role, module, kind){
+  const perms = JSON.parse(JSON.stringify(role.permissions||{}));
+  if (!perms[module]) perms[module] = {read:false, write:false, other:[]};
+  const before = !!perms[module][kind];
+  perms[module][kind] = !before;
+  await STATE.db.collection('roles').doc(role.id).update({ permissions: perms, updatedAt: nowIso() });
+  await logAudit({ action: before?'permission_removed':'permission_added', targetUserId:null, targetUserName:`Role: ${role.name}`, field:`${module}.${kind}`, oldValue:before, newValue:!before, note:`${before?'Removed':'Added'} "${kind}" on "${module}" for role "${role.name}".` });
+  toast(`${before?'Removed':'Added'} ${kind} on ${module} for ${role.name}`);
+}
+async function addOtherAction(role, module, action){
+  action = (action||'').trim();
+  if (!action) return;
+  const perms = JSON.parse(JSON.stringify(role.permissions||{}));
+  if (!perms[module]) perms[module] = {read:false, write:false, other:[]};
+  if (perms[module].other.includes(action)) return;
+  perms[module].other.push(action);
+  await STATE.db.collection('roles').doc(role.id).update({ permissions: perms, updatedAt: nowIso() });
+  await logAudit({ action:'permission_added', targetUserId:null, targetUserName:`Role: ${role.name}`, field:`${module}.${action}`, oldValue:null, newValue:action, note:`Added action "${action}" on "${module}" for role "${role.name}".` });
+  toast(`Added "${action}" on ${module}`);
+}
+async function removeOtherAction(role, module, action){
+  const perms = JSON.parse(JSON.stringify(role.permissions||{}));
+  if (!perms[module]) return;
+  perms[module].other = perms[module].other.filter(a=>a!==action);
+  await STATE.db.collection('roles').doc(role.id).update({ permissions: perms, updatedAt: nowIso() });
+  await logAudit({ action:'permission_removed', targetUserId:null, targetUserName:`Role: ${role.name}`, field:`${module}.${action}`, oldValue:action, newValue:null, note:`Removed action "${action}" on "${module}" for role "${role.name}".` });
+  toast(`Removed "${action}" on ${module}`);
+}
+async function createRole(fields){
+  const doc = { name: fields.name, scope: fields.scope || 'Org-type: partner', boundOrg:null, orgsAssigned:[], adminsInB2G:0, activeAdminsInB2G:0, adminsTotal:0, createdAt: nowIso(), updatedAt: nowIso(), permissions:{}, active:true };
+  const ref = await STATE.db.collection('roles').add(doc);
+  await logAudit({ action:'role_created', targetUserId:null, targetUserName:`Role: ${fields.name}`, field:'role', oldValue:null, newValue:fields.name, note:`New role "${fields.name}" created.` });
+  toast(`Role "${fields.name}" created`);
+  return ref.id;
+}
+async function setRoleActive(role, active){
+  await STATE.db.collection('roles').doc(role.id).update({ active });
+  await logAudit({ action: active?'role_activated':'role_archived', targetUserId:null, targetUserName:`Role: ${role.name}`, field:'active', oldValue:!active, newValue:active, note:`Role "${role.name}" ${active?'reactivated':'archived (kept, not deleted)'}.` });
+  toast(`${role.name} ${active?'reactivated':'archived'}`);
+}
+/* ---------------------------------------------------------------------- */
+/* Org-wide permissions catalog (CRUD, independent of any single role)    */
+/* ---------------------------------------------------------------------- */
+async function createCatalogModule(name){
+  name = (name||'').trim();
+  if (!name) return;
+  const id = catalogModuleId(name);
+  if (catalogEntry(name)){ toast(`"${name}" is already in the catalog`); return; }
+  await STATE.db.collection('permissionsCatalog').doc(id).set({ name, actions:[], createdAt: nowIso(), updatedAt: nowIso() });
+  await logAudit({ action:'catalog_module_added', targetUserId:null, targetUserName:null, field:'permissionsCatalog', oldValue:null, newValue:name, note:`Added "${name}" to the org-wide permissions catalog.` });
+  toast(`"${name}" added to the permissions catalog`);
+}
+async function deleteCatalogModule(mod){
+  const usedByRoles = STATE.roles.filter(r => r.permissions && r.permissions[mod.name]).map(r=>r.name);
+  await STATE.db.collection('permissionsCatalog').doc(mod.id).delete();
+  await logAudit({ action:'catalog_module_removed', targetUserId:null, targetUserName:null, field:'permissionsCatalog', oldValue:mod.name, newValue:null, note:`Removed "${mod.name}" from the catalog.${usedByRoles.length?` Still referenced by role(s): ${usedByRoles.join(', ')} — those roles keep their existing grants.`:''}` });
+  toast(`"${mod.name}" removed from the catalog`);
+}
+async function addCatalogAction(mod, action){
+  action = (action||'').trim();
+  if (!action) return;
+  const actions = Array.from(new Set([...(mod.actions||[]), action]));
+  await STATE.db.collection('permissionsCatalog').doc(mod.id).update({ actions, updatedAt: nowIso() });
+  await logAudit({ action:'catalog_action_added', targetUserId:null, targetUserName:null, field:`${mod.name}.${action}`, oldValue:null, newValue:action, note:`Added action "${action}" to "${mod.name}" in the org-wide catalog.` });
+  toast(`Added "${action}" to ${mod.name}`);
+}
+async function removeCatalogAction(mod, action){
+  const actions = (mod.actions||[]).filter(a=>a!==action);
+  await STATE.db.collection('permissionsCatalog').doc(mod.id).update({ actions, updatedAt: nowIso() });
+  await logAudit({ action:'catalog_action_removed', targetUserId:null, targetUserName:null, field:`${mod.name}.${action}`, oldValue:action, newValue:null, note:`Removed action "${action}" from "${mod.name}" in the org-wide catalog.` });
+  toast(`Removed "${action}" from ${mod.name}`);
+}
+async function createDepartment(name){
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || uid('dept');
+  await STATE.db.collection('departments').doc(id).set({ name, createdAt: nowIso(), archived:false });
+  await logAudit({ action:'department_added', targetUserId:null, targetUserName:null, field:'department', oldValue:null, newValue:name, note:`New department "${name}" created.` });
+  toast(`Department "${name}" added`);
+}
+async function grantDelegation(department, user){
+  const existing = activeDelegationFor(department);
+  if (existing){
+    await STATE.db.collection('delegations').doc(existing.id).update({ active:false, revokedAt: nowIso(), revokedBy: actorLabel() });
+  }
+  await STATE.db.collection('delegations').add({
+    department, userId:user.id, userName:user.name, userEmail:user.email, scope:'department',
+    grantedBy: actorLabel(), grantedAt: nowIso(), active:true, revokedAt:null, revokedBy:null,
+  });
+  await logAudit({ action:'delegation_granted', targetUserId:user.id, targetUserName:user.name, field:'department_delegation', oldValue: existing?existing.userName:null, newValue:department, note:`Granted hierarchy management over "${department}" to ${user.name}.` });
+  toast(`${user.name} can now manage ${department}`);
+}
+async function revokeDelegation(delegation){
+  await STATE.db.collection('delegations').doc(delegation.id).update({ active:false, revokedAt: nowIso(), revokedBy: actorLabel() });
+  await logAudit({ action:'delegation_revoked', targetUserId:delegation.userId, targetUserName:delegation.userName, field:'department_delegation', oldValue:delegation.department, newValue:null, note:`Revoked hierarchy management over "${delegation.department}" from ${delegation.userName}.` });
+  toast(`Revoked ${delegation.userName}'s access to ${delegation.department}`);
+}
+
+/* ---------------------------------------------------------------------- */
+/* Viewer switcher                                                        */
+/* ---------------------------------------------------------------------- */
+function populateViewerSelect(){
+  return;
+}
+function applyViewerFromSelect(){
+  return;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Router / top-level render                                              */
+/* ---------------------------------------------------------------------- */
+const VIEW_TITLES = { dashboard:'Dashboard', users:'Users', roles:'Roles & Permissions', departments:'Departments & Delegation', permissions:'Permissions Catalog', audit:'Audit Log', accounts:'App Accounts' };
+function setView(v){
+  STATE.view = v; STATE.openUserId=null; STATE.openRoleId=null;
+  document.querySelectorAll('.navlink').forEach(b=>b.classList.toggle('active', b.dataset.view===v));
+  document.getElementById('sidebar').classList.remove('open');
+  render();
+  if(v==='accounts' && isAdminViewer()) refreshAccounts();
+}
+function render(){
+  if (!STATE.ready) return;
+  document.getElementById('viewTitle').textContent = VIEW_TITLES[STATE.view] || '';
+  const nonAdminHidden = new Set(['roles','departments','permissions','accounts']);
+  document.querySelectorAll('.navlink').forEach(b=>{
+    const restricted = nonAdminHidden.has(b.dataset.view);
+    b.classList.toggle('hidden', restricted && !isAdminViewer());
+  });
+  const content = document.getElementById('content');
+  if (STATE.view === 'dashboard') content.innerHTML = renderDashboard();
+  else if (STATE.view === 'users') content.innerHTML = renderUsers();
+  else if (STATE.view === 'roles') content.innerHTML = renderRoles();
+  else if (STATE.view === 'departments') content.innerHTML = renderDepartments();
+  else if (STATE.view === 'permissions') content.innerHTML = renderPermissionsCatalog();
+  else if (STATE.view === 'audit') content.innerHTML = renderAudit();
+  else if (STATE.view === 'accounts') content.innerHTML = renderAccounts();
+  wireContentEvents();
+  renderUserDrawerIfOpen();
+  renderRoleModalIfOpen();
+}
+
+/* ---------------------------------------------------------------------- */
+/* Dashboard                                                               */
+/* ---------------------------------------------------------------------- */
+function renderDashboard(){
+  const scope = scopedDepartment();
+  const users = scope ? STATE.users.filter(u=>u.department===scope) : STATE.users;
+  const active = users.filter(u=>!u.deleted);
+  const activeStatus = active.filter(u=>u.status==='Active').length;
+  const inactiveStatus = active.filter(u=>u.status==='Inactive').length;
+  const deletedCount = users.filter(u=>u.deleted).length;
+  const deptCounts = {};
+  active.forEach(u => { deptCounts[u.department] = (deptCounts[u.department]||0)+1; });
+  const deptRows = Object.entries(deptCounts).sort((a,b)=>b[1]-a[1]);
+  const maxDept = Math.max(1, ...deptRows.map(r=>r[1]));
+  const recentAudit = (scope ? STATE.audit.filter(a=>{
+      const u = a.targetUserId ? userById(a.targetUserId) : null;
+      return u ? u.department===scope : a.actor===actorLabel();
+    }) : STATE.audit).slice(0,6);
+
+  const kpis = scope ? `
+    <div class="card kpi"><div class="label">Team members</div><div class="value tabular">${active.length}</div><div class="sub">${scope} department</div></div>
+    <div class="card kpi"><div class="label">Active</div><div class="value tabular" style="color:var(--success)">${activeStatus}</div><div class="sub">${inactiveStatus} inactive</div></div>
+    <div class="card kpi"><div class="label">Removed / deleted</div><div class="value tabular">${deletedCount}</div><div class="sub">kept &amp; tagged, not hidden</div></div>
+    <div class="card kpi"><div class="label">Changes you've logged</div><div class="value tabular">${recentAudit.length ? STATE.audit.filter(a=>a.actor===actorLabel()).length : 0}</div><div class="sub">tracked in the audit log</div></div>
+  ` : `
+    <div class="card kpi"><div class="label">Total users</div><div class="value tabular">${active.length}</div><div class="sub">${deletedCount} deleted (kept &amp; tagged)</div></div>
+    <div class="card kpi"><div class="label">Active</div><div class="value tabular" style="color:var(--success)">${activeStatus}</div><div class="sub">${inactiveStatus} inactive</div></div>
+    <div class="card kpi"><div class="label">Roles defined</div><div class="value tabular">${STATE.roles.filter(r=>r.active).length}</div><div class="sub">${STATE.roles.filter(r=>!r.active).length} archived</div></div>
+    <div class="card kpi"><div class="label">Departments</div><div class="value tabular">${STATE.departments.length}</div><div class="sub">${STATE.delegations.filter(d=>d.active).length} with a delegate</div></div>
+  `;
+
+  return `
+    <div class="grid kpis" style="margin-bottom:18px;">${kpis}</div>
+    <div class="grid" style="grid-template-columns:1.3fr 1fr;gap:16px;align-items:start;">
+      <div class="panel">
+        <div class="panel-head"><h3>${scope? 'Team by status' : 'Users by department'}</h3></div>
+        <div class="panel-body">
+          ${deptRows.length ? deptRows.map(([name,count])=>`
+            <div class="bar-row">
+              <span class="muted" style="font-weight:600;">${esc(name)}</span>
+              <div class="bar-track"><div class="bar-fill" style="width:${Math.round(count/maxDept*100)}%"></div></div>
+              <span class="tabular" style="text-align:right;font-weight:700;">${count}</span>
+            </div>`).join('') : `<div class="empty">No data yet.</div>`}
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head flex-between"><h3>Recent activity</h3><button class="link-btn" data-nav="audit">View audit log →</button></div>
+        <div class="panel-body">
+          ${recentAudit.length ? recentAudit.map(a=>renderAuditRowMini(a)).join('') : `<div class="empty">No changes logged yet.</div>`}
+        </div>
+      </div>
+    </div>
+    ${!scope ? `<div class="banner" style="margin-top:16px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none;margin-top:1px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><div><b>Authenticated administrator view —</b> access to pages and records is enforced by Supabase Row Level Security. Use <b>App Accounts</b> to create or disable logins and assign administrator, manager, or viewer access.</div></div>` : ''}
+  `;
+}
+function renderAuditRowMini(a){
+  return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;">
+    <span class="pill ${auditPillClass(a.action)}" style="flex:none;">${auditActionLabel(a.action)}</span>
+    <div style="flex:1;min-width:0;">
+      <div style="font-weight:600;">${esc(a.targetUserName || '—')}</div>
+      <div class="muted">${esc(a.note||'')}</div>
+    </div>
+    <div class="muted tabular" style="flex:none;white-space:nowrap;">${fmtDay(a.ts)}</div>
+  </div>`;
+}
+function auditPillClass(action){
+  if (/added|granted|created|restored|activated/.test(action)) return 'pill-success';
+  if (/removed|revoked|deleted|archived|reset/.test(action)) return 'pill-danger';
+  if (/changed|import|override|set/.test(action)) return 'pill-blue';
+  return 'pill-neutral';
+}
+function auditActionLabel(action){
+  return ({
+    role_added:'Role added', role_removed:'Role removed', role_restored:'Role restored', role_changed:'Role changed',
+    status_changed:'Status changed', department_changed:'Dept changed', primary_role_changed:'Primary role changed',
+    user_deleted:'User deleted', user_restored:'User restored', user_added:'User added',
+    permission_added:'Permission added', permission_removed:'Permission removed',
+    permission_override_set:'Permission overridden', permission_override_action_added:'Override action added',
+    permission_override_action_removed:'Override action removed', permission_override_reset:'Override reset',
+    permission_override_module_added:'Module granted directly',
+    role_created:'Role created', role_archived:'Role archived', role_activated:'Role reactivated',
+    department_added:'Department added', delegation_granted:'Delegation granted', delegation_revoked:'Delegation revoked',
+    catalog_module_added:'Catalog module added', catalog_module_removed:'Catalog module removed',
+    catalog_action_added:'Catalog action added', catalog_action_removed:'Catalog action removed',
+    data_imported:'Data imported',
+  })[action] || action;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Users list                                                             */
+/* ---------------------------------------------------------------------- */
+function filteredUsers(){
+  const f = STATE.usersFilter;
+  const scope = scopedDepartment();
+  let list = STATE.users.slice();
+  if (scope) list = list.filter(u=>u.department===scope);
+  else if (f.dept !== 'all') list = list.filter(u=>u.department===f.dept);
+  if (f.status !== 'all') list = list.filter(u=>u.status===f.status);
+  if (!f.showDeleted) list = list.filter(u=>!u.deleted);
+  if (f.q){
+    const q = f.q.toLowerCase();
+    list = list.filter(u => (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || (u.primaryRole||'').toLowerCase().includes(q));
+  }
+  list.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+  return list;
+}
+function renderUsers(){
+  const scope = scopedDepartment();
+  const canEditUsers = isAdminViewer() || (STATE.profile && STATE.profile.role === 'manager');
+  const all = filteredUsers();
+  const totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
+  STATE.usersFilter.page = Math.min(STATE.usersFilter.page, totalPages);
+  const pageItems = all.slice((STATE.usersFilter.page-1)*PAGE_SIZE, STATE.usersFilter.page*PAGE_SIZE);
+  const deptOptions = STATE.departments.map(d=>d.name);
+
+  return `
+    ${scope ? `<div class="banner"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex:none;margin-top:1px;"><path d="M4 21V9l8-5 8 5v12"/><path d="M9 21v-6h6v6"/></svg><div>${canEditUsers?`You're managing the <b>${esc(scope)}</b> hierarchy. Changes are restricted to this department and recorded in the audit log.`:`You have read-only access to your own directory record and assigned permissions.`}</div></div>` : ''}
+    <div class="toolbar">
+      <input type="search" id="userSearch" placeholder="Search name, email, role…" value="${esc(STATE.usersFilter.q)}">
+      ${!scope ? `<select id="deptFilter"><option value="all">All departments</option>${deptOptions.map(d=>`<option value="${esc(d)}" ${STATE.usersFilter.dept===d?'selected':''}>${esc(d)}</option>`).join('')}</select>` : ''}
+      <select id="statusFilter">
+        <option value="all">Any status</option>
+        <option value="Active" ${STATE.usersFilter.status==='Active'?'selected':''}>Active</option>
+        <option value="Inactive" ${STATE.usersFilter.status==='Inactive'?'selected':''}>Inactive</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px;color:var(--text-muted);margin:0;">
+        <input type="checkbox" id="showDeleted" style="width:auto;" ${STATE.usersFilter.showDeleted?'checked':''}> Show deleted
+      </label>
+      <div class="spacer"></div>
+      <span class="muted tabular">${all.length} people</span>
+      ${canEditUsers?`<button class="btn btn-primary" id="addUserBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Add user
+      </button>`:''}
+    </div>
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Person</th><th>Department</th><th>Primary role</th><th>Orgs</th><th>Status</th><th>Flags</th></tr></thead>
+          <tbody>
+            ${pageItems.map(u=>`
+              <tr class="row-clickable ${u.deleted?'deleted-row':''}" data-open-user="${u.id}">
+                <td><div class="name-cell"><div class="avatar-circle">${esc(initials(u.name))}</div><div class="who"><b>${esc(u.name)}</b><span>${esc(u.email)}</span></div></div></td>
+                <td>${esc(u.department)}</td>
+                <td>${esc(u.primaryRole||'—')}</td>
+                <td class="tabular">${u.orgCount ?? (u.roles?u.roles.filter(r=>r.status==='active').length:0)}</td>
+                <td>${u.deleted ? '<span class="pill pill-danger">Deleted</span>' : (u.status==='Active' ? '<span class="pill pill-success">Active</span>' : '<span class="pill pill-neutral">Inactive</span>')}</td>
+                <td class="tag-row">${u.deptHead?'<span class="pill pill-warning">Dept Head</span>':''}${u.teamLead?'<span class="pill pill-blue">Team Lead</span>':''}</td>
+              </tr>`).join('') || `<tr><td colspan="6"><div class="empty">No users match these filters.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn btn-sm" id="prevPage" ${STATE.usersFilter.page<=1?'disabled':''}>← Prev</button>
+        <span class="tabular">Page ${STATE.usersFilter.page} of ${totalPages}</span>
+        <button class="btn btn-sm" id="nextPage" ${STATE.usersFilter.page>=totalPages?'disabled':''}>Next →</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------------------------------------------------------------------- */
+/* User drawer                                                            */
+/* ---------------------------------------------------------------------- */
+function openUserDrawer(id){ STATE.openUserId = id; STATE.openRoleId = null; STATE.editingRoleIdx = null; render(); }
+function closeUserDrawer(){ STATE.openUserId = null; STATE.editingRoleIdx = null; render(); }
+function renderUserDrawerIfOpen(){
+  const root = document.getElementById('modalRoot');
+  if (!STATE.openUserId){ if(!STATE.openRoleId) root.innerHTML=''; return; }
+  const u = userById(STATE.openUserId);
+  if (!u){ STATE.openUserId=null; return; }
+  const manageable = canManageUser(u);
+  const eff = computeEffectivePermissions(u);
+  const effEntries = Object.entries(eff).sort((a,b)=>a[0].localeCompare(b[0]));
+  const roleOptions = STATE.roles.filter(r=>r.active).sort((a,b)=>a.name.localeCompare(b.name));
+  const vocab = allModulesVocab();
+  const overrides = u.permOverrides || {};
+  const overridableModules = Object.keys(vocab).filter(m=>!eff[m]).sort();
+  const allOrgs = allOrgsVocab();
+  const allPrimaryRoles = allPrimaryRolesVocab();
+  const history = userHistoryTimeline(u);
+
+  root.innerHTML = `
+    <div class="overlay" id="drawerOverlay">
+      <div class="drawer" onclick="event.stopPropagation()">
+        <div class="drawer-head">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <div class="avatar-circle" style="width:44px;height:44px;font-size:15px;">${esc(initials(u.name))}</div>
+            <div>
+              <h3 style="font-size:17px;">${esc(u.name)}</h3>
+              <div class="muted" style="font-size:12.5px;">${esc(u.email)}</div>
+            </div>
+          </div>
+          <button class="close-x" id="closeDrawer">✕</button>
+        </div>
+
+        ${u.deleted ? `<div class="banner" style="background:var(--danger-bg);border-color:transparent;color:var(--danger-dark);"><b>Deleted</b> by ${esc(u.deletedBy)} on ${fmtDate(u.deletedAt)}. Kept for the record — not erased.</div>` : ''}
+
+        <div class="tag-row" style="margin-bottom:4px;">
+          ${u.deleted ? '<span class="pill pill-danger">Deleted</span>' : (u.status==='Active'?'<span class="pill pill-success">Active</span>':'<span class="pill pill-neutral">Inactive</span>')}
+          <span class="pill pill-blue">${esc(u.department)}</span>
+          ${u.deptHead?'<span class="pill pill-warning">Dept Head</span>':''}
+          ${u.teamLead?'<span class="pill pill-neutral">Team Lead</span>':''}
+        </div>
+
+        <div class="section-title">Profile</div>
+        <div class="field-row">
+          <div class="field"><label>Primary role</label>
+            ${manageable ? `<select id="primaryRoleSelect">${u.primaryRole && !allPrimaryRoles.includes(u.primaryRole) ? `<option value="${esc(u.primaryRole)}" selected>${esc(u.primaryRole)}</option>` : ''}${allPrimaryRoles.map(r=>`<option value="${esc(r)}" ${r===u.primaryRole?'selected':''}>${esc(r)}</option>`).join('')}<option value="__custom__">Custom / new role…</option></select>` : `<input type="text" value="${esc(u.primaryRole||'—')}" disabled>`}
+          </div>
+          <div class="field"><label>Department</label>
+            ${isAdminViewer() ? `<select id="deptSelect">${STATE.departments.map(d=>`<option value="${esc(d.name)}" ${d.name===u.department?'selected':''}>${esc(d.name)}</option>`).join('')}</select>` : `<input type="text" value="${esc(u.department)}" disabled>`}
+          </div>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:6px;">Last activity: ${fmtDay(u.lastActivity)} · On record since ${fmtDay(u.createdAt)}</div>
+
+        <div class="section-title">Organizations &amp; roles <span class="muted" style="text-transform:none;font-weight:500;">(edit swaps the role for that org — nothing is hidden)</span></div>
+        ${(u.roles&&u.roles.length) ? `<div class="table-wrap"><table>
+          <thead><tr><th>Organization</th><th>Role</th><th>Status</th>${manageable?'<th>Actions</th>':''}</tr></thead>
+          <tbody>
+          ${u.roles.map((ra,idx)=>{
+            const editing = manageable && STATE.editingRoleIdx === idx && ra.status==='active';
+            return `
+            <tr>
+              <td style="font-weight:600;">${esc(ra.org)}</td>
+              <td class="${ra.status==='removed'?'strike':''}">
+                ${editing ? `<select id="editRoleSelect${idx}" style="width:100%;max-width:150px;">${roleOptions.map(r=>`<option value="${r.id}" ${r.id===ra.roleId?'selected':''}>${esc(r.name)}</option>`).join('')}</select>` : esc(ra.roleName)}
+                ${ra.modifiedAt ? `<div class="muted" style="font-size:11px;font-weight:500;">changed ${fmtDay(ra.modifiedAt)} by ${esc(ra.modifiedBy)}</div>` : ''}
+              </td>
+              <td>
+                ${ra.status==='active' ? '<span class="pill pill-success">active</span>' : '<span class="pill pill-danger">removed</span>'}
+                <div class="muted" style="font-size:11px;margin-top:3px;">${ra.status==='active' ? `added ${fmtDay(ra.addedAt)}` : `removed ${fmtDay(ra.removedAt)} by ${esc(ra.removedBy)}`}</div>
+              </td>
+              ${manageable ? `<td>
+                <div style="display:flex;gap:6px;">
+                  ${editing ? `
+                    <button class="btn btn-sm btn-primary" title="Save" data-save-edit-role="${idx}">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>
+                    </button>
+                    <button class="btn btn-sm btn-ghost" title="Cancel" data-cancel-edit-role="1">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>
+                    </button>
+                  ` : ra.status==='active' ? `
+                    <button class="btn btn-sm btn-ghost" title="Change role" data-edit-role="${idx}">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>
+                    </button>
+                    <button class="btn btn-sm btn-ghost btn-danger" title="Remove" data-remove-role="${idx}">
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>
+                    </button>
+                  ` : `<button class="btn btn-sm" data-restore-role="${idx}">Restore</button>`}
+                </div>
+              </td>` : ''}
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table></div>` : `<div class="empty" style="padding:16px 0;">No organizations assigned yet.</div>`}
+
+        ${manageable ? `
+          <div style="margin-top:12px;background:var(--surface-2);border-radius:var(--radius-sm);padding:12px;">
+            <label>Add organization</label>
+            <div class="field-row" style="margin-bottom:8px;">
+              <select id="newRoleOrg"><option value="">Choose an organization…</option>${allOrgs.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}<option value="__custom__">Custom / new organization…</option></select>
+              <select id="newRoleId">${roleOptions.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select>
+            </div>
+            <button class="btn btn-primary btn-sm" id="addRoleAssignBtn">Add assignment</button>
+          </div>` : ''}
+
+        <div class="section-title">Effective permissions <span class="muted" style="text-transform:none;font-weight:500;">(derived live from active roles — ${manageable?'toggle to override for this person only':'read-only'})</span></div>
+        ${effEntries.length ? `<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);">
+          ${effEntries.map(([mod,p])=>{
+            const isOverridden = !!overrides[mod];
+            return manageable ? `
+            <div class="module-row" style="border-radius:0;">
+              <div class="modname">${esc(mod)}</div>
+              <div class="modactions">
+                ${isOverridden?`<span class="pill pill-warning" style="font-size:9.5px;padding:1px 6px;" title="Overridden directly for this person, independent of their role(s)">override</span> <button class="btn btn-sm btn-ghost" style="padding:2px 6px;font-size:11px;" data-reset-override="${esc(mod)}">reset</button>`:''}
+                <div class="toggle-field"><span class="toggle ${p.read?'on':''}" data-toggle-perm-override="${esc(mod)}|read"><span class="track"></span></span><span class="toggle-label">Read</span></div>
+                <div class="toggle-field"><span class="toggle ${p.write?'on':''}" data-toggle-perm-override="${esc(mod)}|write"><span class="track"></span></span><span class="toggle-label">Write</span></div>
+                ${[...p.other].map(a=>`<span class="chip">${esc(a)}<button data-remove-override-action="${esc(mod)}|${esc(a)}">✕</button></span>`).join('')}
+                <button class="btn btn-sm btn-ghost" data-add-override-action-for="${esc(mod)}">+ action</button>
+              </div>
+            </div>` : `
+            <div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;">
+              <b>${esc(mod)}</b>
+              <div class="tag-row" style="margin-top:4px;">
+                ${p.read?'<span class="pill pill-blue">read</span>':''}
+                ${p.write?'<span class="pill pill-warning">write</span>':''}
+                ${[...p.other].map(a=>`<span class="pill pill-neutral">${esc(a)}</span>`).join('')}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : `<div class="empty" style="padding:16px 0;">No active roles and no direct grants — no effective permissions.</div>`}
+        ${manageable ? `
+          <div class="field-row" style="margin-top:8px;">
+            <select id="newOverrideModule"><option value="">Grant another module directly…</option>${overridableModules.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}<option value="__custom__">Custom module…</option></select>
+            <button class="btn btn-sm" id="grantOverrideModuleBtn">Grant</button>
+          </div>` : ''}
+
+        <div class="section-title">History <span class="muted" style="text-transform:none;font-weight:500;">(assigned-at for every org, plus every change on record — nothing is hidden)</span></div>
+        ${history.length ? `<div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);">
+          ${history.map(e=>`
+            <div style="display:flex;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;">
+              <span class="pill ${auditPillClass(e.action)}" style="flex:none;height:fit-content;">${esc(e.pillLabel)}</span>
+              <div style="flex:1;min-width:0;">
+                <div>${esc(e.label)}</div>
+                ${e.detail ? `<div class="muted" style="font-size:11px;">${esc(e.detail)}</div>` : ''}
+                <div class="muted" style="font-size:11px;">by ${esc(e.actor||'—')}</div>
+              </div>
+              <div class="muted tabular" style="flex:none;white-space:nowrap;">${fmtDate(e.ts)}</div>
+            </div>`).join('')}
+        </div>` : `<div class="empty" style="padding:16px 0;">No history on record yet.</div>`}
+
+        ${manageable ? `
+          <div class="section-title" style="color:var(--danger-dark);">Danger zone</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" id="toggleStatusBtn">${u.status==='Active'?'Deactivate':'Reactivate'} user</button>
+            ${u.deleted ? `<button class="btn btn-sm btn-primary" id="restoreUserBtn">Restore user</button>` : `<button class="btn btn-sm btn-danger" id="deleteUserBtn">Delete user</button>`}
+          </div>
+          <div class="muted" style="font-size:11.5px;margin-top:8px;">Deleting doesn't erase the record — it's tagged "deleted" and stays in the audit log and (unless filtered out) the users table.</div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+  document.getElementById('drawerOverlay').addEventListener('click', closeUserDrawer);
+  document.getElementById('closeDrawer').addEventListener('click', closeUserDrawer);
+  if (isAdminViewer()){
+    const ds = document.getElementById('deptSelect');
+    if (ds) ds.addEventListener('change', ()=>changeDepartment(u, ds.value));
+  }
+  if (manageable){
+    const prSelect = document.getElementById('primaryRoleSelect');
+    if (prSelect) prSelect.addEventListener('change', ()=>{
+      let role = prSelect.value;
+      if (role === '__custom__'){
+        role = (prompt('New primary role label:')||'').trim();
+        if (!role){ prSelect.value = u.primaryRole || ''; return; }
+      }
+      changePrimaryRole(u, role);
+    });
+    const addBtn = document.getElementById('addRoleAssignBtn');
+    if (addBtn) addBtn.addEventListener('click', ()=>{
+      let org = document.getElementById('newRoleOrg').value;
+      if (org === '__custom__') org = (prompt('New organization / intake name:')||'').trim();
+      const roleId = document.getElementById('newRoleId').value;
+      if (!org || !org.trim()){ toast('Choose or enter an org / intake name'); return; }
+      addRoleAssignment(u, org, roleId);
+    });
+    document.querySelectorAll('[data-remove-role]').forEach(b=>b.addEventListener('click', ()=>removeRoleAssignment(u, parseInt(b.dataset.removeRole,10))));
+    document.querySelectorAll('[data-restore-role]').forEach(b=>b.addEventListener('click', ()=>restoreRoleAssignment(u, parseInt(b.dataset.restoreRole,10))));
+    document.querySelectorAll('[data-edit-role]').forEach(b=>b.addEventListener('click', ()=>{ STATE.editingRoleIdx = parseInt(b.dataset.editRole,10); render(); }));
+    document.querySelectorAll('[data-cancel-edit-role]').forEach(b=>b.addEventListener('click', ()=>{ STATE.editingRoleIdx = null; render(); }));
+    document.querySelectorAll('[data-save-edit-role]').forEach(b=>b.addEventListener('click', async ()=>{
+      const idx = parseInt(b.dataset.saveEditRole,10);
+      const sel = document.getElementById('editRoleSelect'+idx);
+      if (!sel) return;
+      await changeRoleAssignment(u, idx, sel.value);
+      STATE.editingRoleIdx = null;
+      render();
+    }));
+    document.querySelectorAll('[data-toggle-perm-override]').forEach(el=>el.addEventListener('click', ()=>{
+      const [mod, kind] = el.dataset.togglePermOverride.split('|');
+      const current = el.classList.contains('on');
+      setPermOverride(u, mod, kind, !current);
+    }));
+    document.querySelectorAll('[data-remove-override-action]').forEach(el=>el.addEventListener('click', ()=>{
+      const [mod, action] = el.dataset.removeOverrideAction.split('|');
+      removePermOverrideAction(u, mod, action);
+    }));
+    document.querySelectorAll('[data-add-override-action-for]').forEach(el=>el.addEventListener('click', ()=>{
+      const mod = el.dataset.addOverrideActionFor;
+      const action = prompt(`New action for "${mod}" — direct grant to ${u.name} (e.g. export, approve):`);
+      if (action) addPermOverrideAction(u, mod, action);
+    }));
+    document.querySelectorAll('[data-reset-override]').forEach(el=>el.addEventListener('click', ()=>{
+      const mod = el.dataset.resetOverride;
+      confirmAction(`Reset "${mod}" to role default?`, `Removes the direct override for ${u.name} — access to "${mod}" goes back to whatever their role(s) grant.`, ()=>resetPermOverride(u, mod));
+    }));
+    const grantOverrideBtn = document.getElementById('grantOverrideModuleBtn');
+    if (grantOverrideBtn) grantOverrideBtn.addEventListener('click', ()=>{
+      const sel = document.getElementById('newOverrideModule');
+      let mod = sel.value;
+      if (mod === '__custom__') mod = (prompt('New module name:')||'').trim();
+      if (!mod) return;
+      grantOverrideModule(u, mod);
+    });
+    const tsBtn = document.getElementById('toggleStatusBtn'); if (tsBtn) tsBtn.addEventListener('click', ()=>toggleUserStatus(u));
+    const delBtn = document.getElementById('deleteUserBtn'); if (delBtn) delBtn.addEventListener('click', ()=>confirmAction(`Delete ${u.name}?`, 'This tags the user as deleted and logs it. The record is kept, not erased.', ()=>softDeleteUser(u)));
+    const resBtn = document.getElementById('restoreUserBtn'); if (resBtn) resBtn.addEventListener('click', ()=>restoreUser(u));
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Roles & Permissions (admin only)                                       */
+/* ---------------------------------------------------------------------- */
+function renderRoles(){
+  const roles = STATE.roles.slice().sort((a,b)=> (a.active===b.active?0:(a.active?-1:1)) || a.name.localeCompare(b.name));
+  return `
+    <div class="toolbar"><span class="muted tabular">${roles.filter(r=>r.active).length} active · ${roles.filter(r=>!r.active).length} archived</span><div class="spacer"></div>
+      <button class="btn btn-primary" id="addRoleBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Add role</button>
+    </div>
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Role</th><th>Scope</th><th>Modules</th><th>Assigned admins</th><th>Status</th></tr></thead>
+          <tbody>
+            ${roles.map(r=>`
+              <tr class="row-clickable ${!r.active?'deleted-row':''}" data-open-role="${r.id}">
+                <td><b>${esc(r.name)}</b></td>
+                <td class="muted">${esc((r.scope||'').replace('Org-type: ',''))}</td>
+                <td class="tabular">${Object.keys(r.permissions||{}).length}</td>
+                <td class="tabular">${r.adminsTotal ?? '—'}</td>
+                <td>${r.active?'<span class="pill pill-success">Active</span>':'<span class="pill pill-neutral">Archived</span>'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+function openRoleModal(id){ STATE.openRoleId = id; STATE.openUserId = null; render(); }
+function closeRoleModal(){ STATE.openRoleId = null; render(); }
+function renderRoleModalIfOpen(){
+  const root = document.getElementById('modalRoot');
+  if (!STATE.openRoleId) return;
+  const r = roleById(STATE.openRoleId);
+  if (!r){ STATE.openRoleId=null; return; }
+  const vocab = allModulesVocab();
+  const modNames = Array.from(new Set([...Object.keys(r.permissions||{}), ...Object.keys(vocab)])).sort();
+  const unusedModules = Object.keys(vocab).filter(m=>!(r.permissions&&r.permissions[m])).sort();
+
+  root.innerHTML = `
+    <div class="overlay" id="roleOverlay">
+      <div class="drawer" style="width:min(620px,100%);" onclick="event.stopPropagation()">
+        <div class="drawer-head">
+          <div><h3 style="font-size:17px;">${esc(r.name)}</h3><div class="muted" style="font-size:12.5px;">${esc((r.scope||'').replace('Org-type: ',''))} · ${r.active?'Active':'Archived'}</div></div>
+          <button class="close-x" id="closeRoleModal">✕</button>
+        </div>
+        <div class="tag-row" style="margin-bottom:10px;">
+          <button class="btn btn-sm" id="toggleRoleActive">${r.active?'Archive role':'Reactivate role'}</button>
+        </div>
+        <div class="muted" style="font-size:11.5px;margin-bottom:10px;">Archiving keeps the role and its history — it's tagged, not deleted. Toggling read/write/actions below applies instantly to everyone assigned this role, and is logged.</div>
+
+        <div class="section-title">Permissions by module</div>
+        ${modNames.filter(m=>r.permissions&&r.permissions[m]).map(mod=>{
+          const p = r.permissions[mod];
+          const knownActions = Array.from(new Set([...(vocab[mod]?[...vocab[mod]]:[]), ...(p.other||[])])).sort();
+          return `
+          <div class="module-row">
+            <div class="modname">${esc(mod)}</div>
+            <div class="modactions">
+              <div class="toggle-field"><span class="toggle ${p.read?'on':''}" data-toggle-perm="${esc(mod)}|read"><span class="track"></span></span><span class="toggle-label">Read</span></div>
+              <div class="toggle-field"><span class="toggle ${p.write?'on':''}" data-toggle-perm="${esc(mod)}|write"><span class="track"></span></span><span class="toggle-label">Write</span></div>
+              ${(p.other||[]).map(a=>`<span class="chip">${esc(a)}<button data-remove-action="${esc(mod)}|${esc(a)}">✕</button></span>`).join('')}
+              <button class="btn btn-sm btn-ghost" data-add-action-for="${esc(mod)}">+ action</button>
+            </div>
+          </div>`;
+        }).join('') || `<div class="empty" style="padding:16px 0;">No modules yet — add one below.</div>`}
+
+        <div class="section-title">Add a module to this role</div>
+        <div class="field-row">
+          <select id="newModuleSelect"><option value="">Choose a module…</option>${unusedModules.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}<option value="__custom__">Custom module…</option></select>
+          <button class="btn btn-sm btn-primary" id="addModuleBtn">Add module</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('roleOverlay').addEventListener('click', closeRoleModal);
+  document.getElementById('closeRoleModal').addEventListener('click', closeRoleModal);
+  document.getElementById('toggleRoleActive').addEventListener('click', ()=>setRoleActive(r, !r.active));
+  document.querySelectorAll('[data-toggle-perm]').forEach(el=>el.addEventListener('click', ()=>{
+    const [mod, kind] = el.dataset.togglePerm.split('|'); togglePermission(r, mod, kind);
+  }));
+  document.querySelectorAll('[data-remove-action]').forEach(el=>el.addEventListener('click', ()=>{
+    const [mod, action] = el.dataset.removeAction.split('|'); removeOtherAction(r, mod, action);
+  }));
+  document.querySelectorAll('[data-add-action-for]').forEach(el=>el.addEventListener('click', ()=>{
+    const mod = el.dataset.addActionFor;
+    const action = prompt(`New action for "${mod}" (e.g. export, reassign, publish):`);
+    if (action) addOtherAction(r, mod, action);
+  }));
+  document.getElementById('addModuleBtn').addEventListener('click', ()=>{
+    const sel = document.getElementById('newModuleSelect');
+    let mod = sel.value;
+    if (mod === '__custom__') mod = prompt('New module name:');
+    if (!mod) return;
+    const perms = JSON.parse(JSON.stringify(r.permissions||{}));
+    if (perms[mod]) { toast('That module is already on this role'); return; }
+    perms[mod] = {read:false, write:false, other:[]};
+    STATE.db.collection('roles').doc(r.id).update({ permissions: perms, updatedAt: nowIso() }).then(()=>{
+      logAudit({ action:'permission_added', targetUserId:null, targetUserName:`Role: ${r.name}`, field:mod, oldValue:null, newValue:'module added', note:`Added module "${mod}" to role "${r.name}".` });
+      toast(`Added module "${mod}" — set read/write/actions next`);
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Departments & Delegation (admin only)                                  */
+/* ---------------------------------------------------------------------- */
+function renderDepartments(){
+  const revoked = STATE.delegations.filter(d=>!d.active).sort((a,b)=> new Date(b.revokedAt||0) - new Date(a.revokedAt||0));
+  return `
+    <div class="toolbar"><span class="muted">Assign a hierarchy manager per department — they'll see and manage only their people.</span><div class="spacer"></div>
+      <button class="btn btn-primary" id="addDeptBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Add department</button>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr));">
+      ${STATE.departments.map(d=>{
+        const deleg = activeDelegationFor(d.name);
+        return `<div class="card">
+          <div class="flex-between"><h3 style="font-size:15px;">${esc(d.name)}</h3><span class="pill pill-blue tabular">${deptMemberCount(d.name)} people</span></div>
+          <div class="divider"></div>
+          ${deleg ? `
+            <div class="muted" style="font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;margin-bottom:4px;">Hierarchy manager</div>
+            <div class="flex-between">
+              <div><b style="font-size:13px;">${esc(deleg.userName)}</b><div class="muted" style="font-size:11.5px;">since ${fmtDay(deleg.grantedAt)}</div></div>
+              <button class="btn btn-sm btn-danger" data-revoke-deleg="${deleg.id}">Revoke</button>
+            </div>` : `<div class="muted" style="font-size:12.5px;margin-bottom:8px;">No delegate assigned yet.</div>`}
+          <button class="btn btn-sm" style="margin-top:10px;width:100%;justify-content:center;" data-assign-deleg="${esc(d.name)}">${deleg?'Reassign delegate':'Assign delegate'}</button>
+        </div>`;
+      }).join('')}
+    </div>
+    ${revoked.length ? `
+      <div class="section-title" style="margin-top:22px;">Delegation history <span class="muted" style="text-transform:none;font-weight:500;">(revoked — kept, not hidden)</span></div>
+      <div class="panel"><div class="table-wrap"><table>
+        <thead><tr><th>Department</th><th>Was managed by</th><th>Granted</th><th>Revoked</th><th>Revoked by</th></tr></thead>
+        <tbody>${revoked.map(d=>`<tr><td>${esc(d.department)}</td><td>${esc(d.userName)}</td><td>${fmtDay(d.grantedAt)}</td><td>${fmtDay(d.revokedAt)}</td><td>${esc(d.revokedBy||'—')}</td></tr>`).join('')}</tbody>
+      </table></div></div>` : ''}
+  `;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Permissions catalog (org-wide, CRUD)                                   */
+/* ---------------------------------------------------------------------- */
+function renderPermissionsCatalog(){
+  const q = (STATE.permissionsFilter.q||'').toLowerCase();
+  const mods = STATE.permissionsCatalog
+    .filter(m => !q || m.name.toLowerCase().includes(q) || (m.actions||[]).some(a=>a.toLowerCase().includes(q)))
+    .sort((a,b)=>a.name.localeCompare(b.name));
+  return `
+    <div class="toolbar">
+      <input type="search" id="catalogSearch" placeholder="Search modules or actions…" value="${esc(STATE.permissionsFilter.q)}">
+      <div class="spacer"></div>
+      <span class="muted tabular">${mods.length} module${mods.length===1?'':'s'}</span>
+      <button class="btn btn-primary" id="addCatalogModuleBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Add module</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-bottom:12px;">This is the master list of modules and actions available to every role in the organization. Adding, renaming an action, or removing a module here is logged and applies org-wide; existing roles keep whatever grants they already have.</div>
+    <div class="panel">
+      ${mods.map(mod=>{
+        const usedByCount = STATE.roles.filter(r=>r.permissions && r.permissions[mod.name]).length;
+        return `
+        <div class="module-row">
+          <div class="modname">${esc(mod.name)}${usedByCount?` <span class="muted" style="font-weight:500;font-size:11px;">· used by ${usedByCount} role${usedByCount===1?'':'s'}</span>`:''}</div>
+          <div class="modactions">
+            <span class="muted" style="font-size:11px;">read &amp; write always available ·</span>
+            ${(mod.actions||[]).map(a=>`<span class="chip">${esc(a)}<button data-remove-catalog-action="${esc(mod.name)}|${esc(a)}">✕</button></span>`).join('')}
+            <button class="btn btn-sm btn-ghost" data-add-catalog-action="${esc(mod.name)}">+ action</button>
+            <button class="btn btn-sm btn-ghost btn-danger" data-delete-catalog-module="${esc(mod.name)}">Delete</button>
+          </div>
+        </div>`;
+      }).join('') || `<div class="empty" style="padding:20px 0;">${q ? 'No modules match your search.' : 'No modules in the catalog yet — add one above.'}</div>`}
+    </div>
+  `;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Audit log                                                               */
+/* ---------------------------------------------------------------------- */
+const AUDIT_PAGE_SIZE = 30;
+function filteredAudit(){
+  const f = STATE.auditFilter;
+  let list = STATE.audit.slice();
+  if (f.action !== 'all') list = list.filter(a=>a.action===f.action);
+  if (f.q){
+    const q = f.q.toLowerCase();
+    list = list.filter(a => (a.actor||'').toLowerCase().includes(q) || (a.targetUserName||'').toLowerCase().includes(q) || (a.note||'').toLowerCase().includes(q));
+  }
+  return list;
+}
+function renderAudit(){
+  const all = filteredAudit();
+  const totalPages = Math.max(1, Math.ceil(all.length / AUDIT_PAGE_SIZE));
+  STATE.auditFilter.page = Math.min(STATE.auditFilter.page, totalPages);
+  const pageItems = all.slice((STATE.auditFilter.page-1)*AUDIT_PAGE_SIZE, STATE.auditFilter.page*AUDIT_PAGE_SIZE);
+  const actionTypes = Array.from(new Set(STATE.audit.map(a=>a.action))).sort();
+  return `
+    <div class="toolbar">
+      <input type="search" id="auditSearch" placeholder="Search actor, target, note…" value="${esc(STATE.auditFilter.q)}">
+      <select id="auditActionFilter"><option value="all">All actions</option>${actionTypes.map(t=>`<option value="${t}" ${STATE.auditFilter.action===t?'selected':''}>${auditActionLabel(t)}</option>`).join('')}</select>
+      <div class="spacer"></div>
+      <span class="muted tabular">${all.length} entries (most recent 1000 shown)</span>
+    </div>
+    <div class="panel">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th><th>Note</th></tr></thead>
+          <tbody>
+            ${pageItems.map(a=>`
+              <tr>
+                <td class="muted tabular" style="white-space:nowrap;">${fmtDate(a.ts)}</td>
+                <td><b>${esc(a.actor)}</b><div class="muted" style="font-size:11px;">${esc(a.actorRole||'')}</div></td>
+                <td><span class="pill ${auditPillClass(a.action)}">${auditActionLabel(a.action)}</span></td>
+                <td>${esc(a.targetUserName||'—')}</td>
+                <td class="muted" style="max-width:180px;">${a.field?esc(a.field):''}${(a.oldValue!==null&&a.oldValue!==undefined)?` <span class="strike">${esc(a.oldValue)}</span>`:''}${(a.newValue!==null&&a.newValue!==undefined)?` → ${esc(a.newValue)}`:''}</td>
+                <td class="muted" style="max-width:260px;">${esc(a.note||'')}</td>
+              </tr>`).join('') || `<tr><td colspan="6"><div class="empty">No matching entries.</div></td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button class="btn btn-sm" id="auditPrev" ${STATE.auditFilter.page<=1?'disabled':''}>← Prev</button>
+        <span class="tabular">Page ${STATE.auditFilter.page} of ${totalPages}</span>
+        <button class="btn btn-sm" id="auditNext" ${STATE.auditFilter.page>=totalPages?'disabled':''}>Next →</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Generic action modals (confirm / add user / add role / add dept / assign delegate) */
+/* ---------------------------------------------------------------------- */
+function closeActionModal(){ document.getElementById('actionModalRoot').innerHTML = ''; }
+function showActionModal(innerHtml, onMount){
+  const root = document.getElementById('actionModalRoot');
+  root.innerHTML = `<div class="overlay modal-center" id="actionOverlay"><div class="modal" onclick="event.stopPropagation()">${innerHtml}</div></div>`;
+  document.getElementById('actionOverlay').addEventListener('click', closeActionModal);
+  if (onMount) onMount(root);
+}
+function confirmAction(title, body, onConfirm){
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:8px;">${esc(title)}</h3>
+    <p class="muted" style="font-size:13px;margin-bottom:18px;">${esc(body)}</p>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn" id="cancelConfirm">Cancel</button>
+      <button class="btn btn-danger" id="okConfirm">Confirm</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelConfirm').addEventListener('click', closeActionModal);
+    document.getElementById('okConfirm').addEventListener('click', ()=>{ closeActionModal(); onConfirm(); });
+  });
+}
+function openAddUserModal(){
+  const scope = scopedDepartment();
+  const deptOpts = scope ? [scope] : STATE.departments.map(d=>d.name);
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:14px;">Add a new user</h3>
+    <div class="field"><label>Full name</label><input type="text" id="nuName" placeholder="e.g. Sara Mostafa"></div>
+    <div class="field"><label>Email</label><input type="email" id="nuEmail" placeholder="name@ischooltech.com"></div>
+    <div class="field-row">
+      <div class="field"><label>Department</label><select id="nuDept">${deptOpts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('')}</select></div>
+      <div class="field"><label>Primary role label (optional)</label><input type="text" id="nuRole" placeholder="e.g. Edu. Mentor"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn" id="cancelAddUser">Cancel</button>
+      <button class="btn btn-primary" id="okAddUser">Add user</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelAddUser').addEventListener('click', closeActionModal);
+    document.getElementById('okAddUser').addEventListener('click', async ()=>{
+      const name = document.getElementById('nuName').value.trim();
+      const email = document.getElementById('nuEmail').value.trim();
+      const department = document.getElementById('nuDept').value;
+      const primaryRole = document.getElementById('nuRole').value.trim();
+      if (!name || !email){ toast('Name and email are required'); return; }
+      await createUser({ name, email, department, primaryRole });
+      closeActionModal();
+    });
+  });
+}
+function openAddRoleModal(){
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:14px;">Create a new role</h3>
+    <div class="field"><label>Role name</label><input type="text" id="nrName" placeholder="e.g. Regional Coordinator"></div>
+    <div class="field"><label>Scope</label>
+      <select id="nrScope"><option value="Org-type: partner">Org-type: partner</option><option value="Org-type: i2s">Org-type: i2s</option></select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn" id="cancelAddRole">Cancel</button>
+      <button class="btn btn-primary" id="okAddRole">Create role</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelAddRole').addEventListener('click', closeActionModal);
+    document.getElementById('okAddRole').addEventListener('click', async ()=>{
+      const name = document.getElementById('nrName').value.trim();
+      const scope = document.getElementById('nrScope').value;
+      if (!name){ toast('Give the role a name'); return; }
+      const id = await createRole({ name, scope });
+      closeActionModal();
+      openRoleModal(id);
+    });
+  });
+}
+function openAddDeptModal(){
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:14px;">Add a department</h3>
+    <div class="field"><label>Department name</label><input type="text" id="ndName" placeholder="e.g. Marketing"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn" id="cancelAddDept">Cancel</button>
+      <button class="btn btn-primary" id="okAddDept">Add department</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelAddDept').addEventListener('click', closeActionModal);
+    document.getElementById('okAddDept').addEventListener('click', async ()=>{
+      const name = document.getElementById('ndName').value.trim();
+      if (!name){ toast('Name required'); return; }
+      await createDepartment(name);
+      closeActionModal();
+    });
+  });
+}
+function openAddCatalogModuleModal(){
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:14px;">Add a module to the permissions catalog</h3>
+    <div class="field"><label>Module name</label><input type="text" id="ncmName" placeholder="e.g. Attendance Reports"></div>
+    <div class="muted" style="font-size:12px;margin-bottom:4px;">Every role can toggle read/write for this module once it's added. You can attach extra custom actions (like "export" or "approve") afterward.</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn" id="cancelAddCatalogModule">Cancel</button>
+      <button class="btn btn-primary" id="okAddCatalogModule">Add module</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelAddCatalogModule').addEventListener('click', closeActionModal);
+    document.getElementById('okAddCatalogModule').addEventListener('click', async ()=>{
+      const name = document.getElementById('ncmName').value.trim();
+      if (!name){ toast('Name required'); return; }
+      await createCatalogModule(name);
+      closeActionModal();
+    });
+  });
+}
+function openAddCatalogActionModal(modName){
+  const mod = catalogEntry(modName);
+  if (!mod) return;
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:14px;">Add an action to "${esc(modName)}"</h3>
+    <div class="field"><label>Action name</label><input type="text" id="ncaName" placeholder="e.g. export"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn" id="cancelAddCatalogAction">Cancel</button>
+      <button class="btn btn-primary" id="okAddCatalogAction">Add action</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelAddCatalogAction').addEventListener('click', closeActionModal);
+    document.getElementById('okAddCatalogAction').addEventListener('click', async ()=>{
+      const action = document.getElementById('ncaName').value.trim();
+      if (!action){ toast('Action name required'); return; }
+      await addCatalogAction(mod, action);
+      closeActionModal();
+    });
+  });
+}
+function otherActiveDelegationsFor(userId, excludeDept){
+  return STATE.delegations.filter(d=>d.active && d.userId===userId && d.department!==excludeDept).map(d=>d.department);
+}
+function delegateOptionLabel(u, deptName){
+  const leadsElsewhere = otherActiveDelegationsFor(u.id, deptName);
+  let label = `${u.name} — ${u.email} (${u.department})`;
+  if (leadsElsewhere.length) label += ` · also leads: ${leadsElsewhere.join(', ')}`;
+  return label;
+}
+function openAssignDelegateModal(deptName){
+  const allCandidates = STATE.users.filter(u=>!u.deleted).sort((a,b)=>a.name.localeCompare(b.name));
+  const renderOptions = (list) => list.map(u=>`<option value="${u.id}">${esc(delegateOptionLabel(u, deptName))}</option>`).join('') || '<option value="">No matching people</option>';
+  showActionModal(`
+    <h3 style="font-size:16px;margin-bottom:6px;">Assign hierarchy manager</h3>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;">for <b>${esc(deptName)}</b> — they'll be able to view and manage everyone in this department. Anyone from the sheet can be picked, from any department — the same person can lead several teams at once.</p>
+    <div class="field"><label>Search people</label><input type="search" id="delegSearch" placeholder="Search name, email, or department…"></div>
+    <div class="field"><label>Person <span class="muted" style="font-weight:500;text-transform:none;">(${allCandidates.length} in the directory)</span></label>
+      <select id="delegUser" size="8" style="height:auto;">${renderOptions(allCandidates)}</select>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn" id="cancelDeleg">Cancel</button>
+      <button class="btn btn-primary" id="okDeleg" ${allCandidates.length?'':'disabled'}>Assign</button>
+    </div>
+  `, ()=>{
+    document.getElementById('cancelDeleg').addEventListener('click', closeActionModal);
+    const searchInput = document.getElementById('delegSearch');
+    const select = document.getElementById('delegUser');
+    searchInput.addEventListener('input', ()=>{
+      const q = searchInput.value.trim().toLowerCase();
+      const filtered = !q ? allCandidates : allCandidates.filter(u =>
+        (u.name||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || (u.department||'').toLowerCase().includes(q));
+      select.innerHTML = renderOptions(filtered);
+    });
+    const ok = document.getElementById('okDeleg');
+    if (ok) ok.addEventListener('click', async ()=>{
+      const uid_ = select.value;
+      const u = userById(uid_);
+      if (!u) return;
+      await grantDelegation(deptName, u);
+      closeActionModal();
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Auth account management (admin only; service key stays on the server)  */
+/* ---------------------------------------------------------------------- */
+async function accountApi(method, body){
+  const {data:{session}}=await STATE.supabase.auth.getSession();
+  const response=await fetch('/api/accounts',{method,headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:body?JSON.stringify(body):undefined});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok) throw new Error(payload.error||'Account request failed');
+  return payload;
+}
+async function refreshAccounts(){
+  try{ const result=await accountApi('GET'); STATE.accounts=result.accounts||[]; render(); }
+  catch(e){ toast(e.message); }
+}
+function renderAccounts(){
+  if(!isAdminViewer()) return '<div class="empty">Administrator access required.</div>';
+  return `<div class="panel">
+    <div class="panel-head"><h3>Application accounts</h3><div class="spacer"></div><button class="btn" id="refreshAccountsBtn">Refresh</button><button class="btn btn-primary" id="addAccountBtn">Add account</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Account</th><th>Access level</th><th>Department</th><th>Status</th><th>Last sign in</th><th></th></tr></thead><tbody>
+    ${STATE.accounts.length?STATE.accounts.map(a=>`<tr><td><div class="name-cell"><div class="avatar-circle">${initials(a.display_name||a.email)}</div><div class="who"><b>${esc(a.display_name||'Unnamed')}</b><span>${esc(a.email)}</span></div></div></td>
+      <td><select data-account-role="${a.id}" style="min-width:110px"><option value="admin" ${a.role==='admin'?'selected':''}>Admin</option><option value="manager" ${a.role==='manager'?'selected':''}>Manager</option><option value="viewer" ${a.role==='viewer'?'selected':''}>Viewer</option></select></td>
+      <td>${esc(a.department||'—')}</td><td><span class="pill ${a.active?'pill-success':'pill-danger'}">${a.active?'Active':'Disabled'}</span></td><td>${fmtDate(a.last_sign_in_at)}</td>
+      <td><button class="btn btn-sm ${a.active?'btn-danger':''}" data-toggle-account="${a.id}" data-active="${a.active}">${a.active?'Disable':'Enable'}</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty">Loading accounts…</div></td></tr>'}
+    </tbody></table></div></div>`;
+}
+function openAddAccountModal(){
+  const depts=STATE.departments.map(d=>d.name).sort();
+  showActionModal(`<h3 style="font-size:16px;margin-bottom:14px">Create application account</h3>
+    <div class="field"><label>Full name</label><input id="aaName" type="text" required></div>
+    <div class="field"><label>Email</label><input id="aaEmail" type="email" required></div>
+    <div class="field"><label>Temporary password</label><input id="aaPassword" type="password" minlength="8" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg)" required></div>
+    <div class="field-row"><div class="field"><label>Access level</label><select id="aaRole"><option value="viewer">Viewer</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
+    <div class="field"><label>Department</label><select id="aaDept"><option value="">None</option>${depts.map(d=>`<option>${esc(d)}</option>`).join('')}</select></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancelAddAccount">Cancel</button><button class="btn btn-primary" id="okAddAccount">Create account</button></div>`,()=>{
+      document.getElementById('cancelAddAccount').onclick=closeActionModal;
+      document.getElementById('okAddAccount').onclick=async()=>{ try{ await accountApi('POST',{email:document.getElementById('aaEmail').value.trim(),password:document.getElementById('aaPassword').value,display_name:document.getElementById('aaName').value.trim(),role:document.getElementById('aaRole').value,department:document.getElementById('aaDept').value||null}); closeActionModal(); toast('Account created'); await refreshAccounts(); }catch(e){toast(e.message);} };
+    });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Export                                                                  */
+/* ---------------------------------------------------------------------- */
+function buildWorkbook(){
+  const wb = XLSX.utils.book_new();
+
+  const usersSheet = STATE.users.map(u => ({
+    'User ID': u.id, 'Name': u.name, 'Email': u.email, 'Primary Role': u.primaryRole||'',
+    'Department': u.department, 'Status': u.status, 'Deleted': u.deleted ? 'Yes' : 'No',
+    'Deleted At': u.deletedAt||'', 'Deleted By': u.deletedBy||'',
+    'Team Lead': u.teamLead?'Yes':'No', 'Dept Head': u.deptHead?'Yes':'No',
+    'Active Role Assignments': (u.roles||[]).filter(r=>r.status==='active').map(r=>`${r.org} → ${r.roleName}`).join(' | '),
+    'Removed Role Assignments (kept for history)': (u.roles||[]).filter(r=>r.status==='removed').map(r=>`${r.org} → ${r.roleName} (removed by ${r.removedBy} on ${r.removedAt})`).join(' | '),
+    'Last Activity': u.lastActivity||'', 'On Record Since': u.createdAt||'',
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(usersSheet), 'Users');
+
+  const rolesSheet = STATE.roles.map(r => ({
+    'Role ID': r.id, 'Role Name': r.name, 'Scope': r.scope, 'Status': r.active?'Active':'Archived',
+    'Modules': Object.keys(r.permissions||{}).length,
+    'Permissions': Object.entries(r.permissions||{}).map(([m,p])=>`${m}: ${[p.read?'read':'', p.write?'write':'', ...(p.other||[])].filter(Boolean).join(', ')}`).join(' | '),
+    'Admins Assigned': r.adminsTotal ?? '', 'Updated At': r.updatedAt||'',
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rolesSheet), 'Roles');
+
+  const delegSheet = STATE.delegations.map(d => ({
+    'Department': d.department, 'Delegate': d.userName, 'Email': d.userEmail||'', 'Status': d.active?'Active':'Revoked',
+    'Granted At': d.grantedAt, 'Granted By': d.grantedBy, 'Revoked At': d.revokedAt||'', 'Revoked By': d.revokedBy||'',
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(delegSheet), 'Delegations');
+
+  const auditSheet = STATE.audit.map(a => ({
+    'Timestamp': a.ts, 'Actor': a.actor, 'Actor Role': a.actorRole, 'Action': auditActionLabel(a.action),
+    'Target User': a.targetUserName||'', 'Field': a.field||'', 'Old Value': a.oldValue==null?'':a.oldValue, 'New Value': a.newValue==null?'':a.newValue, 'Note': a.note||'',
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditSheet), 'Audit Log');
+
+  return wb;
+}
+async function exportWorkbook(){
+  if (!STATE.downloads){ toast("Downloads aren't available in this view"); return; }
+  try{
+    const wb = buildWorkbook();
+    const arr = XLSX.write(wb, { bookType:'xlsx', type:'array' });
+    const blob = new Blob([arr], { type:'application/octet-stream' });
+    const stamp = new Date().toISOString().slice(0,10);
+    await STATE.downloads.save({ filename:`ischool-access-control-export-${stamp}.xlsx`, data: blob });
+    toast('Export saved');
+  }catch(e){
+    if (e && e.code === 'declined') return;
+    console.error(e);
+    toast('Export failed — see console');
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Event wiring                                                            */
+/* ---------------------------------------------------------------------- */
+function wireContentEvents(){
+  const content = document.getElementById('content');
+  content.querySelectorAll('[data-open-user]').forEach(el=>el.addEventListener('click', ()=>openUserDrawer(el.dataset.openUser)));
+  content.querySelectorAll('[data-open-role]').forEach(el=>el.addEventListener('click', ()=>openRoleModal(el.dataset.openRole)));
+  content.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click', ()=>setView(el.dataset.nav)));
+  content.querySelectorAll('[data-revoke-deleg]').forEach(el=>el.addEventListener('click', ()=>{
+    const d = STATE.delegations.find(x=>x.id===el.dataset.revokeDeleg);
+    if (d) confirmAction(`Revoke ${d.userName}'s access?`, `They'll no longer manage ${d.department}. This is logged and the past grant stays visible in history.`, ()=>revokeDelegation(d));
+  }));
+  content.querySelectorAll('[data-assign-deleg]').forEach(el=>el.addEventListener('click', ()=>openAssignDelegateModal(el.dataset.assignDeleg)));
+
+  const search = document.getElementById('userSearch');
+  if (search) search.addEventListener('input', debounce(()=>{ STATE.usersFilter.q = search.value; STATE.usersFilter.page=1; render(); }, 220));
+  const deptFilter = document.getElementById('deptFilter');
+  if (deptFilter) deptFilter.addEventListener('change', ()=>{ STATE.usersFilter.dept = deptFilter.value; STATE.usersFilter.page=1; render(); });
+  const statusFilter = document.getElementById('statusFilter');
+  if (statusFilter) statusFilter.addEventListener('change', ()=>{ STATE.usersFilter.status = statusFilter.value; STATE.usersFilter.page=1; render(); });
+  const showDeleted = document.getElementById('showDeleted');
+  if (showDeleted) showDeleted.addEventListener('change', ()=>{ STATE.usersFilter.showDeleted = showDeleted.checked; render(); });
+  const prevPage = document.getElementById('prevPage');
+  if (prevPage) prevPage.addEventListener('click', ()=>{ STATE.usersFilter.page--; render(); });
+  const nextPage = document.getElementById('nextPage');
+  if (nextPage) nextPage.addEventListener('click', ()=>{ STATE.usersFilter.page++; render(); });
+  const addUserBtn = document.getElementById('addUserBtn');
+  if (addUserBtn) addUserBtn.addEventListener('click', openAddUserModal);
+
+  const addRoleBtn = document.getElementById('addRoleBtn');
+  if (addRoleBtn) addRoleBtn.addEventListener('click', openAddRoleModal);
+  const addDeptBtn = document.getElementById('addDeptBtn');
+  if (addDeptBtn) addDeptBtn.addEventListener('click', openAddDeptModal);
+
+  const auditSearch = document.getElementById('auditSearch');
+  if (auditSearch) auditSearch.addEventListener('input', debounce(()=>{ STATE.auditFilter.q = auditSearch.value; STATE.auditFilter.page=1; render(); }, 220));
+  const auditActionFilter = document.getElementById('auditActionFilter');
+  if (auditActionFilter) auditActionFilter.addEventListener('change', ()=>{ STATE.auditFilter.action = auditActionFilter.value; STATE.auditFilter.page=1; render(); });
+  const auditPrev = document.getElementById('auditPrev');
+  if (auditPrev) auditPrev.addEventListener('click', ()=>{ STATE.auditFilter.page--; render(); });
+  const auditNext = document.getElementById('auditNext');
+  if (auditNext) auditNext.addEventListener('click', ()=>{ STATE.auditFilter.page++; render(); });
+
+  const catalogSearch = document.getElementById('catalogSearch');
+  if (catalogSearch) catalogSearch.addEventListener('input', debounce(()=>{ STATE.permissionsFilter.q = catalogSearch.value; render(); }, 220));
+  const addCatalogModuleBtn = document.getElementById('addCatalogModuleBtn');
+  if (addCatalogModuleBtn) addCatalogModuleBtn.addEventListener('click', openAddCatalogModuleModal);
+  content.querySelectorAll('[data-add-catalog-action]').forEach(el=>el.addEventListener('click', ()=>openAddCatalogActionModal(el.dataset.addCatalogAction)));
+  content.querySelectorAll('[data-remove-catalog-action]').forEach(el=>el.addEventListener('click', ()=>{
+    const [modName, action] = el.dataset.removeCatalogAction.split('|');
+    const mod = catalogEntry(modName);
+    if (mod) confirmAction(`Remove "${action}"?`, `This removes the "${action}" action from "${modName}" org-wide. Roles that already grant it will keep it until edited.`, ()=>removeCatalogAction(mod, action));
+  }));
+  content.querySelectorAll('[data-delete-catalog-module]').forEach(el=>el.addEventListener('click', ()=>{
+    const mod = catalogEntry(el.dataset.deleteCatalogModule);
+    if (!mod) return;
+    const usedByCount = STATE.roles.filter(r=>r.permissions && r.permissions[mod.name]).length;
+    confirmAction(`Delete "${mod.name}" from the catalog?`, `It disappears from the "add a module" list for every role.${usedByCount?` ${usedByCount} role(s) currently grant it — they keep that grant, tagged in the audit log, but it's no longer managed centrally.`:''}`, ()=>deleteCatalogModule(mod));
+  }));
+  const refreshAccountsBtn=document.getElementById('refreshAccountsBtn');
+  if(refreshAccountsBtn) refreshAccountsBtn.addEventListener('click',refreshAccounts);
+  const addAccountBtn=document.getElementById('addAccountBtn');
+  if(addAccountBtn) addAccountBtn.addEventListener('click',openAddAccountModal);
+  content.querySelectorAll('[data-account-role]').forEach(el=>el.addEventListener('change',async()=>{ try{await accountApi('PATCH',{id:el.dataset.accountRole,role:el.value});toast('Access level updated');await refreshAccounts();}catch(e){toast(e.message);} }));
+  content.querySelectorAll('[data-toggle-account]').forEach(el=>el.addEventListener('click',async()=>{ try{await accountApi('PATCH',{id:el.dataset.toggleAccount,active:el.dataset.active!=='true'});toast('Account status updated');await refreshAccounts();}catch(e){toast(e.message);} }));
+}
+
+document.querySelectorAll('.navlink').forEach(b=>b.addEventListener('click', ()=>setView(b.dataset.view)));
+document.getElementById('menuBtn').addEventListener('click', ()=>document.getElementById('sidebar').classList.toggle('open'));
+document.getElementById('exportBtn').addEventListener('click', exportWorkbook);
+document.getElementById('signOutBtn').addEventListener('click',()=>STATE.supabase.auth.signOut());
+
+/* ---------------------------------------------------------------------- */
+/* Light/dark theme toggle — defaults to light regardless of OS setting   */
+/* ---------------------------------------------------------------------- */
+function syncThemeIcon(){
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  document.getElementById('themeIconSun').style.display = isDark ? 'none' : '';
+  document.getElementById('themeIconMoon').style.display = isDark ? '' : 'none';
+  document.getElementById('themeToggleBtn').title = isDark ? 'Switch to light theme' : 'Switch to dark theme';
+}
+document.getElementById('themeToggleBtn').addEventListener('click', ()=>{
+  const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('ischool-b2g-theme', next); }catch(e){}
+  syncThemeIcon();
+});
+syncThemeIcon();
+
+document.getElementById('loginForm').addEventListener('submit',async(e)=>{
+  e.preventDefault(); showAuthError('');
+  const button=document.getElementById('loginBtn'); button.disabled=true; button.textContent='Signing in…';
+  const {error}=await STATE.supabase.auth.signInWithPassword({email:document.getElementById('loginEmail').value.trim(),password:document.getElementById('loginPassword').value});
+  if(error) showAuthError(error.message); button.disabled=false; button.textContent='Sign in';
+});
+document.getElementById('resetPasswordBtn').addEventListener('click',async()=>{
+  const email=document.getElementById('loginEmail').value.trim(); if(!email){showAuthError('Enter your email first.');return;}
+  const {error}=await STATE.supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin});
+  showAuthError(error?error.message:'Password reset email sent.');
+});
+
+async function startApp(){
+  try{
+    const response=await fetch('/api/config'); if(!response.ok) throw new Error('Missing Supabase configuration.');
+    const config=await response.json(); STATE.supabase=supabase.createClient(config.supabaseUrl,config.supabaseAnonKey);
+    STATE.supabase.auth.onAuthStateChange(async(event,session)=>{
+      STATE.session=session;
+      if(!session){ STATE.ready=false; STATE.profile=null; setSignedInUi(false); return; }
+      try{ await loadProfile(); setSignedInUi(true); await initData(); }
+      catch(e){ showAuthError(e.message); await STATE.supabase.auth.signOut(); }
+    });
+    const {data:{session}}=await STATE.supabase.auth.getSession();
+    if(!session) setSignedInUi(false);
+  }catch(e){ showAuthError(`${e.message} Configure the Vercel environment variables, then reload.`); }
+}
+setSignedInUi(false);
+startApp();
+</script>

@@ -1,0 +1,1 @@
+{"name": "Students", "actions": ["change_grade", "create", "export", "import", "manage_notes", "reset", "revoke", "send_email", "send_sms", "update"], "createdAt": "2026-09-21T09:00:00Z", "updatedAt": "2026-09-21T09:00:00Z"}
