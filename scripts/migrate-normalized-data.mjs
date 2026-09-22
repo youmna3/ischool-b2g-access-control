@@ -8,7 +8,8 @@ if (!url || !key) throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KE
 
 const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 const dryRun = process.argv.includes('--dry-run');
-const expectedCore = { users: 444, roles: 31, departments: 8, permissionsCatalog: 43, delegations: 1, auditLog: 2 };
+const minimumCore = { users: 444, roles: 31, departments: 8, permissionsCatalog: 43 };
+const collectionNames = ['users', 'roles', 'departments', 'permissionsCatalog', 'delegations', 'auditLog'];
 
 async function readCollection(collection) {
   const rows = [];
@@ -20,11 +21,11 @@ async function readCollection(collection) {
   }
 }
 
-async function insertMissing(table, rows, onConflict) {
+async function upsertSource(table, rows, onConflict) {
   for (let offset = 0; offset < rows.length; offset += 500) {
     const { error } = await client.from(table).upsert(rows.slice(offset, offset + 500), {
       onConflict,
-      ignoreDuplicates: true
+      ignoreDuplicates: false
     });
     if (error) throw new Error(`${table}: ${error.message}`);
   }
@@ -50,12 +51,11 @@ function jsonValue(value) {
   return value === undefined ? null : value;
 }
 
-const collectionNames = Object.keys(expectedCore);
 const source = Object.fromEntries(await Promise.all(collectionNames.map(async name => [name, await readCollection(name)])));
 
-for (const [name, expected] of Object.entries(expectedCore)) {
-  if (source[name].length !== expected) {
-    throw new Error(`Source validation failed: documents/${name} expected ${expected}, found ${source[name].length}. No normalized rows were written.`);
+for (const [name, minimum] of Object.entries(minimumCore)) {
+  if (source[name].length < minimum) {
+    throw new Error(`Source validation failed: documents/${name} expected at least ${minimum}, found ${source[name].length}. No normalized rows were written.`);
   }
 }
 
@@ -170,19 +170,19 @@ if (dryRun) {
   process.exit(0);
 }
 
-await insertMissing('departments', departments, 'id');
-await insertMissing('roles', roles, 'id');
-await insertMissing('permission_modules', permissionModules, 'id');
-await insertMissing('directory_users', directoryUsers, 'id');
-await insertMissing('role_organizations', roleOrganizations, 'role_id,organization');
-await insertMissing('user_role_assignments', userRoleAssignments, 'id');
-await insertMissing('permission_catalog_actions', catalogActions, 'module_id,action');
-await insertMissing('role_permissions', rolePermissions, 'role_id,module_id');
-await insertMissing('role_permission_actions', rolePermissionActions, 'role_id,module_id,action');
-await insertMissing('user_permission_overrides', userPermissionOverrides, 'user_id,module_id');
-await insertMissing('user_permission_override_actions', userPermissionOverrideActions, 'user_id,module_id,action,mode');
-await insertMissing('delegations', delegations, 'id');
-await insertMissing('audit_log', auditLog, 'id');
+await upsertSource('departments', departments, 'id');
+await upsertSource('roles', roles, 'id');
+await upsertSource('permission_modules', permissionModules, 'id');
+await upsertSource('directory_users', directoryUsers, 'id');
+await upsertSource('role_organizations', roleOrganizations, 'role_id,organization');
+await upsertSource('user_role_assignments', userRoleAssignments, 'id');
+await upsertSource('permission_catalog_actions', catalogActions, 'module_id,action');
+await upsertSource('role_permissions', rolePermissions, 'role_id,module_id');
+await upsertSource('role_permission_actions', rolePermissionActions, 'role_id,module_id,action');
+await upsertSource('user_permission_overrides', userPermissionOverrides, 'user_id,module_id');
+await upsertSource('user_permission_override_actions', userPermissionOverrideActions, 'user_id,module_id,action,mode');
+await upsertSource('delegations', delegations, 'id');
+await upsertSource('audit_log', auditLog, 'id');
 
 const expected = {
   directory_users: directoryUsers.length,

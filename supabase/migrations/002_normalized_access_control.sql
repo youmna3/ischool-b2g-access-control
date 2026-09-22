@@ -177,8 +177,8 @@ begin
     'departments','directory_users','roles','user_role_assignments','permission_modules',
     'role_permissions','user_permission_overrides','delegations'
   ] loop
-    execute format('drop trigger if exists %I_touch_updated_at on public.%I', table_name, table_name);
-    execute format('create trigger %I_touch_updated_at before update on public.%I for each row execute function public.touch_updated_at()', table_name, table_name);
+    execute format('drop trigger if exists %I on public.%I', table_name || '_touch_updated_at', table_name);
+    execute format('create trigger %I before update on public.%I for each row execute function public.touch_updated_at()', table_name || '_touch_updated_at', table_name);
   end loop;
 end $$;
 
@@ -220,10 +220,10 @@ begin
     'departments','roles','role_organizations','permission_modules',
     'permission_catalog_actions','role_permissions','role_permission_actions'
   ] loop
-    execute format('drop policy if exists %I_read on public.%I', table_name, table_name);
-    execute format('create policy %I_read on public.%I for select to authenticated using (public.current_profile_role() is not null)', table_name, table_name);
-    execute format('drop policy if exists %I_admin_write on public.%I', table_name, table_name);
-    execute format('create policy %I_admin_write on public.%I for all to authenticated using (public.current_profile_role() = ''admin'') with check (public.current_profile_role() = ''admin'')', table_name, table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_read', table_name);
+    execute format('create policy %I on public.%I for select to authenticated using (public.current_profile_role() is not null)', table_name || '_read', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_admin_write', table_name);
+    execute format('create policy %I on public.%I for all to authenticated using (public.current_profile_role() = ''admin'') with check (public.current_profile_role() = ''admin'')', table_name || '_admin_write', table_name);
   end loop;
 end $$;
 
@@ -253,10 +253,10 @@ begin
   foreach table_name in array array[
     'user_role_assignments','user_permission_overrides','user_permission_override_actions'
   ] loop
-    execute format('drop policy if exists %I_read on public.%I', table_name, table_name);
-    execute format('create policy %I_read on public.%I for select to authenticated using (public.can_access_directory_user(user_id, false))', table_name, table_name);
-    execute format('drop policy if exists %I_write on public.%I', table_name, table_name);
-    execute format('create policy %I_write on public.%I for all to authenticated using (public.can_access_directory_user(user_id, true)) with check (public.can_access_directory_user(user_id, true))', table_name, table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_read', table_name);
+    execute format('create policy %I on public.%I for select to authenticated using (public.can_access_directory_user(user_id, false))', table_name || '_read', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_write', table_name);
+    execute format('create policy %I on public.%I for all to authenticated using (public.can_access_directory_user(user_id, true)) with check (public.can_access_directory_user(user_id, true))', table_name || '_write', table_name);
   end loop;
 end $$;
 
