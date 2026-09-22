@@ -72,6 +72,10 @@ const { error: profileWriteError } = await client.from('app_profiles').upsert({
   role: 'admin',
   department: null,
   active: true,
+  must_change_password: true,
+  temporary_password_set_at: new Date().toISOString(),
+  temporary_password_set_by: null,
+  password_changed_at: null,
   updated_at: new Date().toISOString()
 });
 

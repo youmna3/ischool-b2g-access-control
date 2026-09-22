@@ -6,6 +6,9 @@ import process from 'node:process';
 const url = process.env.SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY first.');
+if (!process.argv.includes('--legacy-only')) {
+  throw new Error('Legacy documents seeding is no longer the complete import path. Run `npm run seed` to seed and normalize, or pass --legacy-only explicitly for recovery use.');
+}
 
 const client = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 const seedRoot = path.resolve('data', 'seed');
@@ -30,4 +33,4 @@ for (const collectionDir of collections.filter(entry => entry.isDirectory())) {
     process.stdout.write(`\rImported ${total} documents`);
   }
 }
-console.log(`\nSeed complete: ${total} documents.`);
+console.log(`\nLegacy backup seed complete: ${total} documents. Normalized tables remain the application source of truth.`);

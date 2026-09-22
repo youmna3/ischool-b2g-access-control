@@ -19,6 +19,11 @@ if (error) {
   if (updateError) throw updateError;
 } else user = data.user;
 
-const { error: profileError } = await client.from('app_profiles').upsert({ id: user.id, display_name: displayName, role: 'admin', active: true, updated_at: new Date().toISOString() });
+const now = new Date().toISOString();
+const { error: profileError } = await client.from('app_profiles').upsert({
+  id: user.id, display_name: displayName, role: 'admin', department: null, active: true,
+  must_change_password: true, temporary_password_set_at: now,
+  temporary_password_set_by: null, password_changed_at: null, updated_at: now
+});
 if (profileError) throw profileError;
 console.log(`Administrator ready: ${email}`);

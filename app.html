@@ -5,6 +5,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/normalized-db.js"></script>
 <script>
   // Default to the light (white) theme regardless of the visitor's OS/browser
   // dark-mode preference — set as early as possible, before first paint, so
@@ -243,6 +244,18 @@
   </form>
 </div>
 
+<div class="auth-screen hidden" id="passwordChangeScreen">
+  <form class="auth-card" id="passwordChangeForm">
+    <div class="auth-logo" id="passwordChangeLogo"></div>
+    <h1>Choose a new password</h1>
+    <p>Your administrator issued a temporary password. Set a private password before continuing to the application.</p>
+    <div class="auth-error" id="passwordChangeError"></div>
+    <div class="field"><label>New password</label><input type="password" id="newPassword" minlength="8" autocomplete="new-password" required style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg)"></div>
+    <div class="field"><label>Confirm new password</label><input type="password" id="confirmNewPassword" minlength="8" autocomplete="new-password" required style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg)"></div>
+    <button class="btn btn-primary" id="changePasswordBtn" type="submit" style="width:100%;justify-content:center">Save password and continue</button>
+  </form>
+</div>
+
 <div id="app">
   <nav class="sidebar" id="sidebar">
     <div class="brand" id="brandLogo"></div>
@@ -320,6 +333,7 @@ const LOGO_INVERTED = `<svg viewBox="0 0 329 101" xmlns="http://www.w3.org/2000/
 
 document.getElementById('brandLogo').innerHTML = LOGO_PRIMARY.replace('viewBox="0 0 481 138"','viewBox="0 0 481 138" style="height:26px;width:auto;"');
 document.getElementById('authLogo').innerHTML = LOGO_PRIMARY;
+document.getElementById('passwordChangeLogo').innerHTML = LOGO_PRIMARY;
 
 /* ---------------------------------------------------------------------- */
 /* State                                                                   */
@@ -410,42 +424,8 @@ function scopedDepartment(){ return isAdminViewer() ? null : (STATE.profile && S
 /* ---------------------------------------------------------------------- */
 function docsToArr(snap){ return snap.docs.map(d => ({ id: d.id, ...d.data() })); }
 
-class SupabaseDocumentDB {
-  constructor(client){ this.client = client; this.channels = []; }
-  collection(name){ return new SupabaseCollection(this, name); }
-  destroy(){ this.channels.forEach(c=>this.client.removeChannel(c)); this.channels=[]; }
-}
-class SupabaseCollection {
-  constructor(db,name){ this.db=db; this.name=name; this.max=1000; this.sort=null; }
-  limit(n){ this.max=n; return this; }
-  orderBy(field,direction='asc'){ this.sort={field,direction}; return this; }
-  doc(id){ return new SupabaseDocument(this.db,this.name,id); }
-  async add(data){ const id=crypto.randomUUID(); await this.doc(id).set(data); return {id}; }
-  async fetch(){
-    let q=this.db.client.from('documents').select('id,data').eq('collection',this.name).limit(this.max);
-    const {data,error}=await q; if(error) throw error;
-    let rows=(data||[]).map(r=>({id:r.id,data:()=>r.data}));
-    if(this.sort) rows.sort((a,b)=>String(a.data()[this.sort.field]||'').localeCompare(String(b.data()[this.sort.field]||''))*(this.sort.direction==='desc'?-1:1));
-    return {docs:rows};
-  }
-  onSnapshot(next,fail){
-    const load=()=>this.fetch().then(next).catch(fail||console.error); load();
-    const channel=this.db.client.channel(`documents:${this.name}:${crypto.randomUUID()}`).on('postgres_changes',{event:'*',schema:'public',table:'documents',filter:`collection=eq.${this.name}`},load).subscribe();
-    this.db.channels.push(channel); return ()=>this.db.client.removeChannel(channel);
-  }
-}
-class SupabaseDocument {
-  constructor(db,collection,id){ this.db=db; this.collection=collection; this.id=id; }
-  async set(data){ const {error}=await this.db.client.from('documents').upsert({collection:this.collection,id:this.id,data},{onConflict:'collection,id'}); if(error) throw error; }
-  async update(patch){
-    const {data:row,error:readError}=await this.db.client.from('documents').select('data').eq('collection',this.collection).eq('id',this.id).single(); if(readError) throw readError;
-    const {error}=await this.db.client.from('documents').update({data:{...row.data,...patch}}).eq('collection',this.collection).eq('id',this.id); if(error) throw error;
-  }
-  async delete(){ const {error}=await this.db.client.from('documents').delete().eq('collection',this.collection).eq('id',this.id); if(error) throw error; }
-}
-
 function showAuthError(message){ const el=document.getElementById('authError'); el.textContent=message; el.style.display=message?'block':'none'; }
-function setSignedInUi(signedIn){ document.getElementById('authScreen').classList.toggle('hidden',signedIn); document.getElementById('app').classList.toggle('hidden',!signedIn); }
+function setSignedInUi(signedIn){ document.getElementById('authScreen').classList.toggle('hidden',signedIn); document.getElementById('passwordChangeScreen').classList.add('hidden'); document.getElementById('app').classList.toggle('hidden',!signedIn); }
 
 async function loadProfile(){
   const {data,error}=await STATE.supabase.from('app_profiles').select('*').eq('id',STATE.session.user.id).single();
@@ -459,7 +439,7 @@ async function loadProfile(){
 
 async function initData(){
   if(STATE.db) STATE.db.destroy();
-  STATE.db = new SupabaseDocumentDB(STATE.supabase);
+  STATE.db = new NormalizedDB(STATE.supabase);
   STATE.downloads = {save:async({filename,data})=>{ const url=URL.createObjectURL(data); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }};
   STATE.db.collection('users').limit(1000).onSnapshot(snap => {
     STATE.users = docsToArr(snap);
@@ -1682,8 +1662,8 @@ function renderAccounts(){
     <div class="table-wrap"><table><thead><tr><th>Account</th><th>Access level</th><th>Department</th><th>Status</th><th>Last sign in</th><th></th></tr></thead><tbody>
     ${STATE.accounts.length?STATE.accounts.map(a=>`<tr><td><div class="name-cell"><div class="avatar-circle">${initials(a.display_name||a.email)}</div><div class="who"><b>${esc(a.display_name||'Unnamed')}</b><span>${esc(a.email)}</span></div></div></td>
       <td><select data-account-role="${a.id}" style="min-width:110px"><option value="admin" ${a.role==='admin'?'selected':''}>Admin</option><option value="manager" ${a.role==='manager'?'selected':''}>Manager</option><option value="viewer" ${a.role==='viewer'?'selected':''}>Viewer</option></select></td>
-      <td>${esc(a.department||'—')}</td><td><span class="pill ${a.active?'pill-success':'pill-danger'}">${a.active?'Active':'Disabled'}</span></td><td>${fmtDate(a.last_sign_in_at)}</td>
-      <td><button class="btn btn-sm ${a.active?'btn-danger':''}" data-toggle-account="${a.id}" data-active="${a.active}">${a.active?'Disable':'Enable'}</button></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty">Loading accounts…</div></td></tr>'}
+      <td>${esc(a.department||'—')}</td><td><span class="pill ${a.active?'pill-success':'pill-danger'}">${a.active?'Active':'Disabled'}</span>${a.must_change_password?' <span class="pill pill-warning">Temporary password</span>':''}</td><td>${fmtDate(a.last_sign_in_at)}</td>
+      <td><div style="display:flex;gap:6px"><button class="btn btn-sm" data-reset-account-password="${a.id}" data-account-email="${esc(a.email)}">Set New Temporary Password</button><button class="btn btn-sm ${a.active?'btn-danger':''}" data-toggle-account="${a.id}" data-active="${a.active}">${a.active?'Disable':'Enable'}</button></div></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty">Loading accounts…</div></td></tr>'}
     </tbody></table></div></div>`;
 }
 function openAddAccountModal(){
@@ -1691,13 +1671,25 @@ function openAddAccountModal(){
   showActionModal(`<h3 style="font-size:16px;margin-bottom:14px">Create application account</h3>
     <div class="field"><label>Full name</label><input id="aaName" type="text" required></div>
     <div class="field"><label>Email</label><input id="aaEmail" type="email" required></div>
-    <div class="field"><label>Temporary password</label><input id="aaPassword" type="password" minlength="8" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg)" required></div>
+    <div class="field"><label>Temporary password <span class="muted" style="font-weight:500">(leave blank to generate securely)</span></label><input id="aaPassword" type="password" minlength="8" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg)"></div>
     <div class="field-row"><div class="field"><label>Access level</label><select id="aaRole"><option value="viewer">Viewer</option><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
     <div class="field"><label>Department</label><select id="aaDept"><option value="">None</option>${depts.map(d=>`<option>${esc(d)}</option>`).join('')}</select></div></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancelAddAccount">Cancel</button><button class="btn btn-primary" id="okAddAccount">Create account</button></div>`,()=>{
       document.getElementById('cancelAddAccount').onclick=closeActionModal;
-      document.getElementById('okAddAccount').onclick=async()=>{ try{ await accountApi('POST',{email:document.getElementById('aaEmail').value.trim(),password:document.getElementById('aaPassword').value,display_name:document.getElementById('aaName').value.trim(),role:document.getElementById('aaRole').value,department:document.getElementById('aaDept').value||null}); closeActionModal(); toast('Account created'); await refreshAccounts(); }catch(e){toast(e.message);} };
+      document.getElementById('okAddAccount').onclick=async()=>{ try{ const email=document.getElementById('aaEmail').value.trim(); const result=await accountApi('POST',{email,password:document.getElementById('aaPassword').value||undefined,display_name:document.getElementById('aaName').value.trim(),role:document.getElementById('aaRole').value,department:document.getElementById('aaDept').value||null}); closeActionModal(); showTemporaryPassword(email,result.temporary_password); await refreshAccounts(); }catch(e){toast(e.message);} };
     });
+}
+function showTemporaryPassword(email,password){
+  showActionModal(`<h3 style="font-size:16px;margin-bottom:8px">Temporary password created</h3><p class="muted" style="font-size:12.5px">Copy this password now and send it securely to <b>${esc(email)}</b>. It cannot be viewed again.</p><div class="field"><label>Temporary password</label><input id="oneTimePassword" type="text" readonly value="${esc(password)}"></div><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="copyTemporaryPassword">Copy</button><button class="btn btn-primary" id="closeTemporaryPassword">Done</button></div>`,()=>{
+    document.getElementById('copyTemporaryPassword').onclick=async()=>{await navigator.clipboard.writeText(password);toast('Temporary password copied');};
+    document.getElementById('closeTemporaryPassword').onclick=closeActionModal;
+  });
+}
+function openResetAccountPasswordModal(id,email){
+  showActionModal(`<h3 style="font-size:16px;margin-bottom:8px">Set New Temporary Password</h3><p class="muted" style="font-size:12.5px">This immediately replaces the current password for <b>${esc(email)}</b>. Leave blank to generate securely.</p><div class="field"><label>New temporary password</label><input id="resetAccountPassword" type="password" minlength="8" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:var(--bg)"></div><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancelResetAccountPassword">Cancel</button><button class="btn btn-primary" id="okResetAccountPassword">Set password</button></div>`,()=>{
+    document.getElementById('cancelResetAccountPassword').onclick=closeActionModal;
+    document.getElementById('okResetAccountPassword').onclick=async()=>{try{const result=await accountApi('PATCH',{id,reset_password:true,password:document.getElementById('resetAccountPassword').value||undefined});closeActionModal();showTemporaryPassword(email,result.temporary_password);await refreshAccounts();}catch(e){toast(e.message);}};
+  });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1820,6 +1812,7 @@ function wireContentEvents(){
   if(addAccountBtn) addAccountBtn.addEventListener('click',openAddAccountModal);
   content.querySelectorAll('[data-account-role]').forEach(el=>el.addEventListener('change',async()=>{ try{await accountApi('PATCH',{id:el.dataset.accountRole,role:el.value});toast('Access level updated');await refreshAccounts();}catch(e){toast(e.message);} }));
   content.querySelectorAll('[data-toggle-account]').forEach(el=>el.addEventListener('click',async()=>{ try{await accountApi('PATCH',{id:el.dataset.toggleAccount,active:el.dataset.active!=='true'});toast('Account status updated');await refreshAccounts();}catch(e){toast(e.message);} }));
+  content.querySelectorAll('[data-reset-account-password]').forEach(el=>el.addEventListener('click',()=>openResetAccountPasswordModal(el.dataset.resetAccountPassword,el.dataset.accountEmail)));
 }
 
 document.querySelectorAll('.navlink').forEach(b=>b.addEventListener('click', ()=>setView(b.dataset.view)));
@@ -1855,6 +1848,18 @@ document.getElementById('resetPasswordBtn').addEventListener('click',async()=>{
   const {error}=await STATE.supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin});
   showAuthError(error?error.message:'Password reset email sent.');
 });
+document.getElementById('passwordChangeForm').addEventListener('submit',async(e)=>{
+  e.preventDefault();
+  const password=document.getElementById('newPassword').value;
+  const confirmation=document.getElementById('confirmNewPassword').value;
+  const error=document.getElementById('passwordChangeError');
+  error.style.display='none';
+  if(password.length<8 || password!==confirmation){error.textContent=password!==confirmation?'Passwords do not match.':'Password must be at least 8 characters.';error.style.display='block';return;}
+  const button=document.getElementById('changePasswordBtn');button.disabled=true;button.textContent='Saving…';
+  try{await accountApi('PUT',{password});await loadProfile();document.getElementById('passwordChangeScreen').classList.add('hidden');document.getElementById('app').classList.remove('hidden');await initData();}
+  catch(err){error.textContent=err.message;error.style.display='block';}
+  finally{button.disabled=false;button.textContent='Save password and continue';}
+});
 
 async function startApp(){
   try{
@@ -1863,7 +1868,14 @@ async function startApp(){
     STATE.supabase.auth.onAuthStateChange(async(event,session)=>{
       STATE.session=session;
       if(!session){ STATE.ready=false; STATE.profile=null; setSignedInUi(false); return; }
-      try{ await loadProfile(); setSignedInUi(true); await initData(); }
+      try{
+        await loadProfile();
+        if(STATE.profile.must_change_password){
+          document.getElementById('authScreen').classList.add('hidden');
+          document.getElementById('app').classList.add('hidden');
+          document.getElementById('passwordChangeScreen').classList.remove('hidden');
+        }else{ setSignedInUi(true); await initData(); }
+      }
       catch(e){ showAuthError(e.message); await STATE.supabase.auth.signOut(); }
     });
     const {data:{session}}=await STATE.supabase.auth.getSession();

@@ -1,1 +1,59 @@
-{"name": "kareem.osama", "email": "kareem.osama@ischooltech.com", "primaryRole": null, "status": "Active", "department": "CS", "userType": "Admin", "teamLead": false, "deptHead": false, "homeOrg": null, "orgCount": 4.0, "lastActivity": null, "createdAt": "2026-07-19 14:01:58 +0300", "roles": [{"org": "DECI 4th Intake", "roleName": "CS Agent", "roleId": "742", "status": "active", "addedAt": "2026-07-19T14:03:08+03:00", "addedBy": "system-import", "removedAt": null, "removedBy": null}, {"org": "DECI Summer 2026", "roleName": "CS Agent", "roleId": "742", "status": "active", "addedAt": "2026-07-19T14:03:08+03:00", "addedBy": "system-import", "removedAt": null, "removedBy": null}, {"org": "DEMI 3rd Intake", "roleName": "CS Agent", "roleId": "742", "status": "active", "addedAt": "2026-07-19T14:03:08+03:00", "addedBy": "system-import", "removedAt": null, "removedBy": null}, {"org": "DEMI Summer 2026", "roleName": "CS Agent", "roleId": "742", "status": "active", "addedAt": "2026-07-19T14:03:08+03:00", "addedBy": "system-import", "removedAt": null, "removedBy": null}], "deleted": false, "deletedAt": null, "deletedBy": null}
+{
+  "name": "kareem.osama",
+  "email": "kareem.osama@ischooltech.com",
+  "primaryRole": null,
+  "status": "Active",
+  "department": "CS",
+  "userType": "Admin",
+  "teamLead": false,
+  "deptHead": false,
+  "homeOrg": null,
+  "orgCount": 4.0,
+  "lastActivity": null,
+  "createdAt": "2026-07-19 14:01:58 +0300",
+  "roles": [
+    {
+      "org": "DECI 4th Intake",
+      "roleName": "CS Agent",
+      "roleId": "742",
+      "status": "active",
+      "addedAt": "2026-07-19T14:03:08+03:00",
+      "addedBy": "system-import",
+      "removedAt": null,
+      "removedBy": null
+    },
+    {
+      "org": "DECI Summer 2026",
+      "roleName": "CS Agent",
+      "roleId": "742",
+      "status": "active",
+      "addedAt": "2026-07-19T14:03:08+03:00",
+      "addedBy": "system-import",
+      "removedAt": null,
+      "removedBy": null
+    },
+    {
+      "org": "DEMI 3rd Intake",
+      "roleName": "CS Agent",
+      "roleId": "742",
+      "status": "active",
+      "addedAt": "2026-07-19T14:03:08+03:00",
+      "addedBy": "system-import",
+      "removedAt": null,
+      "removedBy": null
+    },
+    {
+      "org": "DEMI Summer 2026",
+      "roleName": "CS Agent",
+      "roleId": "742",
+      "status": "active",
+      "addedAt": "2026-07-19T14:03:08+03:00",
+      "addedBy": "system-import",
+      "removedAt": null,
+      "removedBy": null
+    }
+  ],
+  "deleted": false,
+  "deletedAt": null,
+  "deletedBy": null
+}

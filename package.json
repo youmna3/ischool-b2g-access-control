@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "npx vercel@latest dev",
-    "seed": "node scripts/seed-supabase.mjs",
+    "seed": "node scripts/seed-supabase.mjs --legacy-only && node scripts/migrate-normalized-data.mjs",
+    "seed:legacy": "node scripts/seed-supabase.mjs --legacy-only",
+    "migrate:normalized": "node scripts/migrate-normalized-data.mjs",
     "create-admin": "node scripts/create-admin.mjs"
   },
   "dependencies": {

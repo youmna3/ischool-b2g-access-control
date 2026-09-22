@@ -126,6 +126,10 @@ async function provision(index) {
       role: existingProfile?.role || 'viewer',
       department: existingProfile?.department || null,
       active: true,
+      must_change_password: true,
+      temporary_password_set_at: new Date().toISOString(),
+      temporary_password_set_by: null,
+      password_changed_at: null,
       updated_at: new Date().toISOString()
     };
     await withRetry(() => client.from('app_profiles').upsert(profile));
