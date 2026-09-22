@@ -4,8 +4,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="/normalized-db.js"></script>
+<script src="/dashboard-export.js"></script>
 <script>
   // Default to the light (white) theme regardless of the visitor's OS/browser
   // dark-mode preference — set as early as possible, before first paint, so
@@ -309,6 +311,10 @@
       <button class="btn" id="exportBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
         Export
+      </button>
+      <button class="btn btn-primary hidden" id="dashboardExportBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+        iSchool Dashboard Export Sheet
       </button>
     </div>
     <div class="content" id="content">
@@ -832,6 +838,7 @@ function setView(v){
 }
 function render(){
   if (!STATE.ready) return;
+  document.getElementById('dashboardExportBtn').classList.toggle('hidden', !isAdminViewer());
   document.getElementById('viewTitle').textContent = VIEW_TITLES[STATE.view] || '';
   const nonAdminHidden = new Set(['roles','departments','permissions','accounts']);
   document.querySelectorAll('.navlink').forEach(b=>{
@@ -1747,6 +1754,32 @@ async function exportWorkbook(){
   }
 }
 
+async function exportISchoolDashboardSheets(){
+  if(!isAdminViewer()){ toast('Administrator access required.'); return; }
+  const button=document.getElementById('dashboardExportBtn');
+  const original=button.innerHTML;
+  button.disabled=true;
+  button.textContent='Preparing two Excel files…';
+  try{
+    await window.ISchoolDashboardExport.exportDashboardSheets({
+      db:STATE.db, profile:STATE.profile, downloads:STATE.downloads, ExcelJS:window.ExcelJS,
+      authorize:async()=>{
+        const {data:{session}}=await STATE.supabase.auth.getSession();
+        const response=await fetch('/api/dashboard-export',{headers:{Authorization:`Bearer ${session.access_token}`}});
+        const payload=await response.json().catch(()=>({}));
+        if(!response.ok||!payload.authorized) throw new Error(payload.error||'Administrator access required.');
+      }
+    });
+    toast('Two dashboard export files saved');
+  }catch(e){
+    console.error(e);
+    toast(e.message||'Dashboard export failed — see console');
+  }finally{
+    button.disabled=false;
+    button.innerHTML=original;
+  }
+}
+
 /* ---------------------------------------------------------------------- */
 /* Event wiring                                                            */
 /* ---------------------------------------------------------------------- */
@@ -1818,6 +1851,7 @@ function wireContentEvents(){
 document.querySelectorAll('.navlink').forEach(b=>b.addEventListener('click', ()=>setView(b.dataset.view)));
 document.getElementById('menuBtn').addEventListener('click', ()=>document.getElementById('sidebar').classList.toggle('open'));
 document.getElementById('exportBtn').addEventListener('click', exportWorkbook);
+document.getElementById('dashboardExportBtn').addEventListener('click', exportISchoolDashboardSheets);
 document.getElementById('signOutBtn').addEventListener('click',()=>STATE.supabase.auth.signOut());
 
 /* ---------------------------------------------------------------------- */
